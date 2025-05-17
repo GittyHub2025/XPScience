@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>PSLE Energy Flashcards</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-8px); }
+            20%, 40%, 60%, 80% { transform: translateX(8px); }
+        }
+        .shake { animation: shake 0.5s ease-in-out; }
+
+        .correct-state-static {
+            background-color: #22c55e !important; /* green-500 */
+            color: white !important;
+        }
+        .correct-state-static #questionText { display: none !important; }
+        .correct-state-static #feedbackText,
+        .correct-state-static #feedbackIconContainer,
+        .correct-state-static #questionImagePlaceholder { color: white !important; }
+
+        .incorrect-state {
+            background-color: #ef4444 !important; /* red-500 */
+            color: white !important;
+            border-color: #b91c1c !important; /* red-700 */
+        }
+        .incorrect-state #questionText,
+        .incorrect-state #feedbackText,
+        .incorrect-state #feedbackIconContainer,
+        .incorrect-state #questionImagePlaceholder { color: white !important; }
+        .incorrect-state #feedbackText .prompt-guidance {
+            font-size: 0.875rem; display: block; margin-top: 0.5rem; font-weight: normal;
+        }
+
+        .choice-button, .action-button {
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+            border-radius: 0.5rem; font-weight: 600;
+            padding: 0.75rem 0.5rem; text-align: center;
+            border: 1px solid transparent;
+        }
+        .choice-button:hover:not(:disabled), .action-button:hover {
+            transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+        }
+        .choice-button:active:not(:disabled), .action-button:active {
+            transform: translateY(0px); box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .choice-button:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
+        .choice-button.forced-disabled-look { opacity: 0.5; }
+        .choice-button:disabled:hover { transform: none; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+
+        .clickable-card { cursor: pointer; }
+        #progressBarFill { transition: width 0.3s ease-out; }
+        #confettiCanvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999; }
+        
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.6); align-items: center; justify-content: center; }
+        .modal-content { background-color: #fefefe; margin: auto; padding: 20px; border: 1px solid #888; width: 90%; max-width: 500px; border-radius: 0.5rem; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+
+        .race-track-container { position: relative; width: 100%; height: 30px; margin-top: 20px; margin-bottom: 20px; z-index: 1; }
+        .race-track { position: absolute; bottom: 0; left: 0; width: calc(100% - 30px); height: 10px; background-color: #d1d5db; border-radius: 5px; z-index: 2; }
+        .race-track-fill { position: absolute; bottom: 0; left: 0; height: 10px; background-color: #3b82f6; border-radius: 5px; width: 0%; z-index: 3; transition: width 1.5s ease-out; }
+        .rocket { position: absolute; bottom: -8px; left: 0; font-size: 36px; transform: translateX(-50%); z-index: 10; transition: left 1.5s ease-out; }
+        .checkered-flag { position: absolute; bottom: -8px; right: 0; font-size: 24px; transform: translateX(50%); z-index: 10; }
+
+        #questionText { word-break: break-word; hyphens: auto; }
+        .choice-button { white-space: normal; word-break: break-word; line-height: 1.4; min-height: 60px; display: flex; align-items: center; justify-content: center; }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-green-200 via-teal-200 to-cyan-200 min-h-screen flex items-center justify-center p-4">
+
+    <div id="appContainer" class="w-full max-w-md mx-auto">
+
+        <!-- Name Input Modal -->
+         <div id="nameModal" class="modal">
+             <div class="modal-content text-center">
+                 <h2 class="text-xl md:text-2xl font-semibold mb-4 text-teal-700">Welcome, Energy Explorer!</h2>
+                 <p class="text-slate-600 mb-4">Enter your name to start your Energy revision.</p>
+                 <input type="text" id="userNameInput" placeholder="Your Name" class="w-full p-2 border border-slate-300 rounded mb-4 focus:ring-teal-500 focus:border-teal-500 text-center text-lg">
+                 <button onclick="saveUserName()" class="action-button bg-teal-500 hover:bg-teal-600 text-white w-full py-3 px-6 text-lg">Start Learning!</button>
+             </div>
+         </div>
+
+        <!-- Set Selection Screen -->
+        <div id="setSelectionScreen" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-lg text-center">
+            <h1 class="text-2xl md:text-3xl font-bold text-teal-700 mb-2">PSLE Energy Revision</h1>
+            <p class="text-slate-600 mb-8">Choose a set to master Energy concepts!</p>
+            <div id="setButtonsContainer" class="grid grid-cols-1 gap-4">
+                <!-- Buttons for flashcard sets will be dynamically added here by JS -->
+            </div>
+        </div>
+
+        <!-- Flashcard Screen -->
+        <div id="flashcardScreen" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-lg">
+            <div class="mb-6">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm font-medium text-slate-600">Progress</span>
+                    <span id="progressText" class="text-sm font-medium text-teal-700">0 / 0</span> </div>
+                <div class="w-full bg-slate-200 rounded-full h-2.5">
+                    <div id="progressBarFill" class="bg-teal-600 h-2.5 rounded-full" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div id="flashcard" class="bg-white border border-slate-300 rounded-lg p-6 mb-6 text-center min-h-[200px] flex flex-col items-center justify-center transition-colors duration-300">
+                 <div id="flashcardContent" class="w-full flex flex-col items-center justify-center">
+                     <div id="feedbackIconContainer" class="hidden text-7xl md:text-8xl mb-2"></div>
+                     <img id="questionImage" src="" alt="Question image" class="hidden mx-auto mb-4 max-h-40 h-auto w-auto object-contain rounded">
+                     <p id="questionText" class="text-lg md:text-xl font-semibold text-slate-800"></p>
+                     <p id="feedbackText" class="mt-2 text-base md:text-lg font-semibold"></p>
+                     <p id="continueText" class="mt-4 text-sm text-slate-500 hidden">Tap card to continue...</p>
+                 </div>
+            </div>
+
+            <div id="answerChoices" class="grid grid-cols-1 gap-3 md:gap-4">
+                <button id="choice1" class="choice-button bg-slate-100 hover:bg-slate-200 text-slate-700 text-base md:text-lg"></button>
+                <button id="choice2" class="choice-button bg-slate-100 hover:bg-slate-200 text-slate-700 text-base md:text-lg"></button>
+                <button id="choice3" class="choice-button bg-slate-100 hover:bg-slate-200 text-slate-700 text-base md:text-lg"></button>
+            </div>
+             <button onclick="showSetSelection()" class="action-button mt-6 bg-slate-500 hover:bg-slate-600 text-white w-full text-sm py-3 px-6">Back to Set Selection</button>
+        </div>
+
+        <!-- Results Screen -->
+        <div id="resultsScreen" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-lg text-center">
+            <h2 id="resultsHeading" class="text-2xl md:text-3xl font-bold text-teal-700 mb-4"></h2>
+
+            <div class="bg-emerald-500 text-white p-4 rounded-lg mb-6">
+                <p class="text-lg md:text-xl font-semibold mb-1">Your Score:</p>
+                <p id="scoreDisplay" class="text-4xl md:text-5xl font-bold italic"></p>
+            </div>
+
+            <div class="race-track-container">
+                <div class="race-track"></div>
+                <div id="raceTrackFill" class="race-track-fill bg-teal-500"></div>
+                <span id="rocketEl" class="rocket">🚀</span>
+                <span id="checkeredFlag" class="checkered-flag">🏁</span>
+            </div>
+            <p class="text-lg text-slate-700 mb-2">Percentage: <span id="percentage" class="font-semibold"></span>%</p>
+            <p class="text-lg text-slate-700 mb-6">Time: <span id="timeTaken" class="font-semibold"></span> seconds</p>
+
+            <p id="encouragementText" class="text-lg text-teal-700 font-semibold mb-6"></p>
+            <div id="incorrectListContainer" class="mb-6 text-left">
+                <h3 class="text-xl font-semibold text-red-600 mb-3">Review Incorrect Answers:</h3>
+                <ul id="incorrectList" class="list-disc list-inside space-y-1 text-slate-600"></ul>
+                 <p id="noIncorrectText" class="text-emerald-600 font-semibold hidden">Great job, no incorrect answers!</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button id="redoIncorrectButton" onclick="redoIncorrect()" class="action-button bg-orange-500 hover:bg-orange-600 text-white w-full py-3 px-6">Redo Incorrect</button>
+                <button onclick="showSetSelection()" class="action-button bg-teal-500 hover:bg-teal-600 text-white w-full py-3 px-6">Choose Another Set</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="confettiCanvas"></canvas>
+
+   <script>
+    // --- Configuration ---
+    const QUESTIONS_PER_SET = 20; // Number of questions to use from each set
+    const AUTO_PROCEED_DELAY = 1200; // Time in ms before automatically proceeding after correct answer
+    const USER_NAME_STORAGE_KEY = 'psleEnergyFlashcardAppUserName_v1'; // Updated key for Energy topic
+    // Ensure this URL is correct for your Google Apps Script
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx6NT33MFycqk4WKipictaOel8xdhyCDGKchgBmrgWfR6_e-7_QmjPe5psaZcVlm28OPQ/exec'; // Same script can be used
+
+    // --- PSLE Energy Flashcard Sets ---
+    const allFlashcardSets = {
+        "Set 1: Energy Basics (Forms & Sources)": [
+            { id: 'e1q1', question: "What is energy best defined as?", options: ["The ability to do work", "The brightness of light", "The speed of an object"], correctAnswer: "The ability to do work", image: null },
+            { id: 'e1q2', question: "Which of the following is a form of energy?", options: ["Water", "Heat", "Air"], correctAnswer: "Heat", image: null },
+            { id: 'e1q3', question: "What form of energy does a moving bicycle possess?", options: ["Chemical energy", "Kinetic energy", "Potential energy"], correctAnswer: "Kinetic energy", image: null },
+            { id: 'e1q4', question: "What form of energy is stored in the food we eat?", options: ["Light energy", "Sound energy", "Chemical energy"], correctAnswer: "Chemical energy", image: null },
+            { id: 'e1q5', question: "The Sun is our primary source of which two forms of energy?", options: ["Kinetic and Potential", "Light and Heat", "Electrical and Sound"], correctAnswer: "Light and Heat", image: null },
+            { id: 'e1q6', question: "Which of these is a common source of energy?", options: ["A rock", "A battery", "A shadow"], correctAnswer: "A battery", image: null },
+            { id: 'e1q7', question: "What term describes the change of energy from one form to another?", options: ["Energy creation", "Energy conversion", "Energy destruction"], correctAnswer: "Energy conversion", image: null },
+            { id: 'e1q8', question: "A burning candle converts chemical energy primarily into:", options: ["Sound and Electrical energy", "Light and Heat energy", "Kinetic and Potential energy"], correctAnswer: "Light and Heat energy", image: null },
+            { id: 'e1q9', question: "An electric fan changes electrical energy mainly into:", options: ["Chemical energy and Light energy", "Heat energy and Potential energy", "Kinetic energy and Sound energy"], correctAnswer: "Kinetic energy and Sound energy", image: null },
+            { id: 'e1q10', question: "What form of energy is stored in a compressed spring?", options: ["Light energy", "Elastic potential energy", "Sound energy"], correctAnswer: "Elastic potential energy", image: null },
+            { id: 'e1q11', question: "What form of energy is produced by a vibrating guitar string?", options: ["Heat energy", "Light energy", "Sound energy"], correctAnswer: "Sound energy", image: null },
+            { id: 'e1q12', question: "Is energy always something we can see?", options: ["Yes, all forms of energy are visible", "No, forms like heat or sound are not always visible", "Only electrical energy is invisible"], correctAnswer: "No, forms like heat or sound are not always visible", image: null },
+            { id: 'e1q13', question: "What main form of energy is stored in a new, unused battery?", options: ["Electrical energy", "Chemical energy", "Kinetic energy"], correctAnswer: "Chemical energy", image: null },
+            { id: 'e1q14', question: "When you rub your hands together vigorously, kinetic energy is converted into:", options: ["Light energy", "Chemical energy", "Heat energy"], correctAnswer: "Heat energy", image: null },
+            { id: 'e1q15', question: "An apple hanging on a tree has what type of energy due to its position?", options: ["Kinetic energy", "Gravitational potential energy", "Sound energy"], correctAnswer: "Gravitational potential energy", image: null },
+            { id: 'e1q16', question: "The principle of energy conservation states that energy cannot be created or:", options: ["Converted", "Destroyed", "Transferred"], correctAnswer: "Destroyed", image: null },
+            { id: 'e1q17', question: "Most home appliances like televisions and refrigerators are powered by:", options: ["Solar energy directly", "Chemical energy from batteries", "Electrical energy from mains"], correctAnswer: "Electrical energy from mains", image: null },
+            { id: 'e1q18', question: "During photosynthesis, plants convert light energy from the sun into:", options: ["Heat energy", "Kinetic energy", "Chemical energy (food)"], correctAnswer: "Chemical energy (food)", image: null },
+            { id: 'e1q19', question: "When wood burns in a campfire, it releases stored chemical energy as:", options: ["Electrical and Sound energy", "Kinetic and Potential energy", "Heat and Light energy"], correctAnswer: "Heat and Light energy", image: null },
+            { id: 'e1q20', question: "A solar panel on a roof is designed to convert sunlight primarily into:", options: ["Heat energy for cooking", "Electrical energy", "Kinetic energy to spin a fan"], correctAnswer: "Electrical energy", image: null }
+        ],
+        "Set 2: Energy Conversions & Conservation": [
+            { id: 'e2q1', question: "The Law of Conservation of Energy states that energy:", options: ["Can be created but not destroyed", "Can be destroyed but not created", "Cannot be created or destroyed, only converted"], correctAnswer: "Cannot be created or destroyed, only converted", image: null },
+            { id: 'e2q2', question: "Which of these is an example of a renewable energy source?", options: ["Coal", "Natural Gas", "Wind"], correctAnswer: "Wind", image: null },
+            { id: 'e2q3', question: "Which of these is an example of a non-renewable energy source?", options: ["Solar power", "Petroleum (oil)", "Hydropower"], correctAnswer: "Petroleum (oil)", image: null },
+            { id: 'e2q4', question: "Why are fossil fuels like coal and oil called non-renewable?", options: ["They renew themselves very quickly", "They take millions of years to form and are used up faster than they are replaced", "They cannot be burned to produce energy"], correctAnswer: "They take millions of years to form and are used up faster than they are replaced", image: null },
+            { id: 'e2q5', question: "In a hydroelectric power plant, the energy of falling water (kinetic) is first converted into rotational (kinetic) energy of a turbine, and then into:", options: ["Chemical energy", "Electrical energy", "Light energy"], correctAnswer: "Electrical energy", image: null },
+            { id: 'e2q6', question: "A wind turbine converts the kinetic energy of wind into:", options: ["Heat energy", "Chemical energy", "Electrical energy"], correctAnswer: "Electrical energy", image: null },
+            { id: 'e2q7', question: "Geothermal energy is obtained from:", options: ["The sun's radiation", "Heat from within the Earth", "Burning of plants"], correctAnswer: "Heat from within the Earth", image: null },
+            { id: 'e2q8', question: "In many energy conversions, some energy is often 'lost' or 'wasted' as which less useful form?", options: ["Light energy", "Heat energy", "Kinetic energy"], correctAnswer: "Heat energy", image: null },
+            { id: 'e2q9', question: "Which action helps to conserve energy at home?", options: ["Leaving all lights on", "Switching off appliances when not in use", "Keeping the refrigerator door open"], correctAnswer: "Switching off appliances when not in use", image: null },
+            { id: 'e2q10', question: "Biomass is an energy source derived from:", options: ["Rocks and minerals", "Organic matter (plants and animal waste)", "Ocean tides"], correctAnswer: "Organic matter (plants and animal waste)", image: null },
+            { id: 'e2q11', question: "An incandescent light bulb converts electrical energy into light energy. What other main form of energy is also produced, often considered 'waste'?", options: ["Sound energy", "Chemical energy", "Heat energy"], correctAnswer: "Heat energy", image: null },
+            { id: 'e2q12', question: "Why is solar energy often described as a 'clean' energy source?", options: ["It cleans the air as it works", "It does not produce harmful pollutants during operation", "It requires a lot of water to operate"], correctAnswer: "It does not produce harmful pollutants during operation", image: null },
+            { id: 'e2q13', question: "What is the ultimate source of energy for almost all energy resources on Earth, including fossil fuels and most renewables?", options: ["The Moon", "The Earth's core", "The Sun"], correctAnswer: "The Sun", image: null },
+            { id: 'e2q14', question: "Burning fossil fuels releases gases that can cause air pollution and contribute to:", options: ["Ozone layer repair", "Climate change (global warming)", "Increased solar energy reaching Earth"], correctAnswer: "Climate change (global warming)", image: null },
+            { id: 'e2q15', question: "Potential energy is ________ energy. An example is ________ potential energy stored in an object lifted off the ground.", options: ["moving; kinetic", "stored; gravitational", "light; solar"], correctAnswer: "stored; gravitational", image: null },
+            { id: 'e2q16', question: "Kinetic energy is the energy of ________, while potential energy is energy that is ________.", options: ["heat; light", "motion; stored", "sound; chemical"], correctAnswer: "motion; stored", image: null },
+            { id: 'e2q17', question: "Our muscles use chemical energy from food and convert it into ________ energy for movement.", options: ["electrical", "light", "kinetic"], correctAnswer: "kinetic", image: null },
+            { id: 'e2q18', question: "A solar water heater uses energy from the sun to heat water. This is a conversion from ________ energy to ________ energy.", options: ["electrical; heat", "light/heat; heat", "chemical; heat"], correctAnswer: "light/heat; heat", image:null },
+            { id: 'e2q19', question: "One major advantage of using wind energy is that it:", options: ["Is available 24/7 in all locations", "Is a renewable resource and does not pollute the air", "Requires very little land space"], correctAnswer: "Is a renewable resource and does not pollute the air", image: null },
+            { id: 'e2q20', question: "A significant disadvantage of relying heavily on fossil fuels is that they:", options: ["Are too cheap and abundant", "Are non-renewable and cause pollution when burned", "Are difficult to transport"], correctAnswer: "Are non-renewable and cause pollution when burned", image: null }
+        ],
+        "Set 3: Energy - Critical Thinking & Application": [
+            { id: 'e3q1', question: "A ball is thrown straight up into the air. As it rises, its kinetic energy ________ and its gravitational potential energy ________.", options: ["increases; decreases", "decreases; increases", "remains constant; increases"], correctAnswer: "decreases; increases", image: null },
+            { id: 'e3q2', question: "At the very highest point of its path, a ball thrown upwards momentarily has:", options: ["Maximum kinetic energy", "Zero gravitational potential energy", "Maximum gravitational potential energy (and zero kinetic energy)"], correctAnswer: "Maximum gravitational potential energy (and zero kinetic energy)", image: null },
+            { id: 'e3q3', question: "A rollercoaster car is poised at the top of its highest hill. At this point, it has maximum:", options: ["Kinetic energy", "Sound energy", "Gravitational potential energy"], correctAnswer: "Gravitational potential energy", image: null },
+            { id: 'e3q4', question: "As a rollercoaster car speeds down a hill, its gravitational potential energy is converted primarily into:", options: ["Chemical energy", "Kinetic energy", "Heat energy due to friction with air only"], correctAnswer: "Kinetic energy", image: null },
+            { id: 'e3q5', question: "Using a more energy-efficient light bulb means that for the same amount of electrical energy used, more of it is converted into ________ and less into ________.", options: ["heat; light", "light; heat", "sound; light"], correctAnswer: "light; heat", image: null },
+            { id: 'e3q6', question: "Car A and Car B have the same mass. If Car A travels at 30 km/h and Car B travels at 60 km/h, which statement is true about their kinetic energy?", options: ["Car A has more kinetic energy", "Car B has more kinetic energy", "Both have the same kinetic energy"], correctAnswer: "Car B has more kinetic energy", image: null },
+            { id: 'e3q7', question: "Why is it environmentally important for countries to increase their use of renewable energy sources like solar and wind power?", options: ["They are cheaper to build than fossil fuel plants", "They help reduce pollution and combat climate change", "They can only be used during the day"], correctAnswer: "They help reduce pollution and combat climate change", image: null },
+            { id: 'e3q8', question: "A bouncing ball eventually stops bouncing mainly because:", options: ["It runs out of gravitational potential energy", "Energy is converted into unusable forms like heat and sound with each bounce", "The air stops it"], correctAnswer: "Energy is converted into unusable forms like heat and sound with each bounce", image: null },
+            { id: 'e3q9', question: "Trace the main energy conversions in a battery-powered torchlight when it's switched on.", options: ["Electrical -> Chemical -> Light", "Chemical -> Electrical -> Light & Heat", "Kinetic -> Electrical -> Light"], correctAnswer: "Chemical -> Electrical -> Light & Heat", image: null },
+            { id: 'e3q10', question: "Comparing electricity generation from solar power versus coal: Solar power generally has ________ environmental impact during operation.", options: ["a much higher", "a similar", "a much lower"], correctAnswer: "a much lower", image: null },
+            { id: 'e3q11', question: "An unlit matchstick primarily contains ________ energy. When struck, this is converted into ________.", options: ["kinetic; heat and light", "chemical; heat and light", "electrical; sound and light"], correctAnswer: "chemical; heat and light", image: null },
+            { id: 'e3q12', question: "If you lift two identical books from the floor to a shelf, but Book A is placed on a shelf 1m high and Book B on a shelf 2m high, which book gains more gravitational potential energy?", options: ["Book A", "Book B", "Both gain the same amount"], correctAnswer: "Book B", image: null },
+            { id: 'e3q13', question: "If a swinging pendulum experienced no friction or air resistance (an ideal system), it would:", options: ["Swing higher and higher", "Gradually slow down and stop", "Continue swinging to the same height indefinitely"], correctAnswer: "Continue swinging to the same height indefinitely", image: null },
+            { id: 'e3q14', question: "Why does a moving car eventually stop if the engine is turned off, even on a flat road?", options: ["It runs out of potential energy", "Friction (road, air resistance, internal) converts kinetic energy to heat", "The car's mass becomes too large"], correctAnswer: "Friction (road, air resistance, internal) converts kinetic energy to heat", image: null },
+            { id: 'e3q15', question: "A power station burns natural gas, a fossil fuel, to produce electricity. This process consumes a ________ resource.", options: ["renewable", "non-renewable", "perpetual"], correctAnswer: "non-renewable", image: null },
+            { id: 'e3q16', question: "Good insulation in a house helps to save energy used for heating in winter primarily by:", options: ["Generating more heat", "Reducing heat loss to the colder surroundings", "Making the air inside denser"], correctAnswer: "Reducing heat loss to the colder surroundings", image: null },
+            { id: 'e3q17', question: "A cyclist eats an energy bar (food) before a race. This food provides ________ energy, which the cyclist's body converts into ________ energy to pedal the bike.", options: ["kinetic; chemical", "chemical; kinetic", "electrical; potential"], correctAnswer: "chemical; kinetic", image: null },
+            { id: 'e3q18', question: "A new electric car is advertised as 'zero tailpipe emissions'. This means that during operation, the car itself:", options: ["Does not consume any energy", "Does not release pollutants like CO2 or smoke directly from the vehicle", "Generates its own electricity from air"], correctAnswer: "Does not release pollutants like CO2 or smoke directly from the vehicle", image: null },
+            { id: 'e3q19', question: "An electric motor is 80% efficient. If it is supplied with 100 Joules of electrical energy, how much energy is converted into useful kinetic energy?", options: ["20 Joules", "80 Joules", "100 Joules"], correctAnswer: "80 Joules", image: null },
+            { id: 'e3q20', question: "To boil the same amount of water, an electric kettle is often more energy efficient than a pot on an open gas flame because:", options: ["Gas is a less powerful energy source than electricity", "The kettle transfers heat more directly to the water with less loss to surroundings", "Water boils at a lower temperature in a kettle"], correctAnswer: "The kettle transfers heat more directly to the water with less loss to surroundings", image: null }
+        ]
+    };
+
+    // --- State Variables ---
+    let currentSetData = [];      // Holds the questions for the current session (subset of a full set)
+    let currentQuestionIndex = 0;
+    let score = 0;
+    let incorrectAnswers = [];    // Stores questions answered incorrectly for review
+    let startTime;
+    let endTime;
+    let isRedoing = false;        // Flag for when user is redoing incorrect answers
+    let proceedTimeoutId = null;  // Timeout ID for auto-proceeding
+    let isWaitingToProceed = false; // Flag to prevent multiple clicks/actions while waiting
+    let userName = localStorage.getItem(USER_NAME_STORAGE_KEY) || '';
+
+    // --- Sound Synthesis (Tone.js) ---
+    const correctSound = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.005, decay: 0.1, sustain: 0.05, release: 0.2 }, }).toDestination();
+    const incorrectSound = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.2 } }).toDestination();
+
+    // --- Confetti ---
+    const confettiCanvas = document.getElementById('confettiCanvas');
+    const myConfetti = confetti.create(confettiCanvas, { resize: true, useWorker: true });
+
+    // --- DOM Elements (Cached for performance) ---
+    const nameModal = document.getElementById('nameModal');
+    const userNameInput = document.getElementById('userNameInput');
+    const setSelectionScreen = document.getElementById('setSelectionScreen');
+    const setButtonsContainer = document.getElementById('setButtonsContainer');
+    const flashcardScreen = document.getElementById('flashcardScreen');
+    const resultsScreen = document.getElementById('resultsScreen');
+    const progressText = document.getElementById('progressText');
+    const progressBarFill = document.getElementById('progressBarFill');
+    const flashcard = document.getElementById('flashcard');
+    const questionImageEl = document.getElementById('questionImage');
+    const questionText = document.getElementById('questionText');
+    const feedbackText = document.getElementById('feedbackText');
+    const feedbackIconContainer = document.getElementById('feedbackIconContainer');
+    const continueText = document.getElementById('continueText');
+    const choiceButtons = [ document.getElementById('choice1'), document.getElementById('choice2'), document.getElementById('choice3') ];
+    const scoreDisplayEl = document.getElementById('scoreDisplay');
+    const percentageEl = document.getElementById('percentage');
+    const timeTakenEl = document.getElementById('timeTaken');
+    const incorrectListContainer = document.getElementById('incorrectListContainer');
+    const incorrectList = document.getElementById('incorrectList');
+    const noIncorrectText = document.getElementById('noIncorrectText');
+    const redoIncorrectButton = document.getElementById('redoIncorrectButton');
+    const encouragementTextEl = document.getElementById('encouragementText');
+    const resultsHeadingEl = document.getElementById('resultsHeading');
+    const raceTrackContainer = document.querySelector('#resultsScreen .race-track-container');
+    const raceTrackFillEl = document.getElementById('raceTrackFill');
+    const rocketEl = document.getElementById('rocketEl');
+
+    // --- Event Listeners ---
+    flashcard.addEventListener('click', () => {
+        if (isWaitingToProceed &&
+            !flashcard.classList.contains('incorrect-state') &&
+            (flashcard.classList.contains('correct-state-static') || flashcard.classList.contains('clickable-card'))) {
+            proceedToNext();
+        }
+    });
+    userNameInput.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            saveUserName();
+        }
+    });
+
+    // --- Utility Functions ---
+    function shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+    }
+
+    // --- Core Application Logic ---
+    function populateStartButton() {
+        setButtonsContainer.innerHTML = ''; // Clear existing buttons
+
+        Object.keys(allFlashcardSets).forEach(setName => {
+            const set = allFlashcardSets[setName];
+            if (set.length >= QUESTIONS_PER_SET) {
+                const button = document.createElement('button');
+                button.textContent = `Start ${setName}`;
+                // Use teal for energy theme
+                button.className = `action-button w-full py-3 px-6 bg-teal-500 hover:bg-teal-600 text-white mb-3 last:mb-0`; 
+                button.onclick = () => startFlashcardSession(set, setName);
+                setButtonsContainer.appendChild(button);
+            } else {
+                const errorP = document.createElement('p');
+                errorP.className = "text-red-500 text-sm";
+                errorP.textContent = `Error: The set "${setName}" does not have enough questions (${set.length} found, ${QUESTIONS_PER_SET} required).`;
+                setButtonsContainer.appendChild(errorP);
+                console.error(`The set "${setName}" does not meet the ${QUESTIONS_PER_SET} question requirement.`);
+            }
+        });
+
+        if (Object.keys(allFlashcardSets).length === 0) {
+             setButtonsContainer.innerHTML = `<p class="text-slate-600">No flashcard sets are currently available. Please check the configuration.</p>`;
+        }
+    }
+
+    function saveUserName() {
+        const name = userNameInput.value.trim();
+        userName = name ? name : 'Learner';
+        localStorage.setItem(USER_NAME_STORAGE_KEY, userName);
+        nameModal.style.display = 'none';
+        showSetSelection();
+    }
+
+    function startFlashcardSession(selectedSet, setName) {
+        Tone.start().catch(e => console.warn("Audio context could not start on user interaction:", e));
+
+        let fullSetCopy = [...selectedSet]; 
+        if (fullSetCopy.length < QUESTIONS_PER_SET) {
+            console.error(`Cannot start set "${setName}": Needs ${QUESTIONS_PER_SET} questions, has ${fullSetCopy.length}.`);
+            alert(`Error: The set "${setName}" does not have enough questions to start the session.`);
+            return;
+        }
+
+        shuffleArray(fullSetCopy);
+        currentSetData = fullSetCopy.slice(0, QUESTIONS_PER_SET); 
+        currentSetData.setName = setName; 
+
+        currentQuestionIndex = 0;
+        score = 0;
+        incorrectAnswers = [];
+        isRedoing = false;
+
+        setSelectionScreen.classList.add('hidden');
+        resultsScreen.classList.add('hidden');
+        flashcardScreen.classList.remove('hidden');
+        updateProgress(); 
+        startTime = new Date();
+        displayQuestion();
+    }
+
+    function resetCardState() {
+        if (proceedTimeoutId) { clearTimeout(proceedTimeoutId); proceedTimeoutId = null; }
+        isWaitingToProceed = false;
+
+        flashcard.classList.remove('shake', 'correct-state-static', 'incorrect-state', 'clickable-card');
+        flashcard.style.backgroundColor = ''; flashcard.style.color = '';
+        questionText.style.color = '';
+        questionText.classList.remove('hidden');
+        feedbackText.textContent = '';
+        feedbackText.className = 'mt-2 text-base md:text-lg font-semibold';
+        feedbackText.style.color = '';
+        feedbackIconContainer.classList.add('hidden');
+        feedbackIconContainer.innerHTML = '';
+        flashcard.style.cursor = 'default';
+        continueText.classList.add('hidden');
+        questionImageEl.classList.add('hidden'); questionImageEl.src = '';
+
+        choiceButtons.forEach(btn => {
+            btn.className = 'choice-button bg-slate-100 hover:bg-slate-200 text-slate-700 text-base md:text-lg';
+        });
+    }
+
+    function displayQuestion() {
+        resetCardState();
+        if (currentQuestionIndex >= currentSetData.length) {
+            showResults();
+            return;
+        }
+        const questionData = currentSetData[currentQuestionIndex];
+        questionText.textContent = questionData.question;
+        if (questionData.image) {
+            questionImageEl.src = questionData.image;
+            questionImageEl.classList.remove('hidden');
+        }
+        let displayOptions = [...questionData.options];
+        shuffleArray(displayOptions);
+        choiceButtons.forEach((button, index) => {
+            if (displayOptions[index] !== undefined) {
+                button.textContent = displayOptions[index];
+                button.disabled = false;
+                button.dataset.answer = displayOptions[index];
+                button.onclick = () => checkAnswer(button);
+                button.style.display = '';
+            } else {
+                button.style.display = 'none'; 
+            }
+        });
+    }
+
+    function updateProgress() {
+        const totalQuestions = currentSetData.length;
+        const completed = currentQuestionIndex;
+        const progressPercentage = totalQuestions > 0 ? (completed / totalQuestions) * 100 : 0;
+        progressText.textContent = `${completed} / ${totalQuestions}`;
+        progressBarFill.style.width = `${progressPercentage}%`;
+    }
+
+    function checkAnswer(button) {
+        Tone.start().catch(e => console.warn("Audio context failed to start on answer check:", e));
+        if (isWaitingToProceed && !flashcard.classList.contains('incorrect-state')) return;
+
+        const selectedAnswer = button.dataset.answer;
+        const questionData = currentSetData[currentQuestionIndex];
+        const correctAnswer = questionData.correctAnswer;
+        choiceButtons.forEach(btn => btn.disabled = true);
+
+        if (selectedAnswer === correctAnswer) {
+            if (!isRedoing) score++;
+            flashcard.classList.add('correct-state-static');
+            feedbackIconContainer.innerHTML = '<span class="text-7xl md:text-8xl">✓</span>';
+            feedbackIconContainer.classList.remove('hidden');
+            questionText.classList.add('hidden');
+            if (questionImageEl.src) questionImageEl.classList.add('hidden'); 
+            feedbackText.textContent = 'Correct!';
+            myConfetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+            correctSound.triggerAttackRelease("G5", "8n", Tone.now());
+            button.className = 'choice-button bg-emerald-600 text-white ring-2 ring-emerald-800 text-base md:text-lg shadow-md';
+            isWaitingToProceed = true;
+            flashcard.classList.add('clickable-card');
+            flashcard.style.cursor = 'pointer';
+            continueText.classList.remove('hidden');
+            if (proceedTimeoutId) clearTimeout(proceedTimeoutId);
+            proceedTimeoutId = setTimeout(proceedToNext, AUTO_PROCEED_DELAY);
+            currentQuestionIndex++; 
+            updateProgress(); 
+        } else {
+            flashcard.classList.add('shake', 'incorrect-state');
+            feedbackIconContainer.innerHTML = '<span class="text-7xl md:text-8xl">✗</span>';
+            feedbackIconContainer.classList.remove('hidden');
+            if (questionImageEl.src) questionImageEl.classList.add('hidden'); 
+            questionText.classList.add('hidden'); 
+            feedbackText.innerHTML = `Correct Answer: <span class="font-bold">${correctAnswer}</span><br><span class="prompt-guidance">Click the correct answer (green) to continue.</span>`;
+            incorrectSound.triggerAttackRelease("C3", "8n");
+            if (!isRedoing) {
+                incorrectAnswers.push({
+                    questionData: JSON.parse(JSON.stringify(questionData)), 
+                    userAnswer: selectedAnswer
+                });
+            }
+            continueText.classList.add('hidden');
+            isWaitingToProceed = false;
+            flashcard.classList.remove('clickable-card');
+            flashcard.style.cursor = 'default';
+            if (proceedTimeoutId) { clearTimeout(proceedTimeoutId); proceedTimeoutId = null; }
+            choiceButtons.forEach(btn => {
+                if (btn.dataset.answer === correctAnswer) {
+                    btn.className = 'choice-button bg-emerald-500 hover:bg-emerald-600 text-white text-base md:text-lg';
+                    btn.disabled = false;
+                    btn.onclick = function() {
+                        currentQuestionIndex++; 
+                        updateProgress(); 
+                        proceedToNext();
+                    };
+                } else if (btn === button) {
+                    btn.className = 'choice-button bg-red-700 text-white ring-2 ring-red-900 text-base md:text-lg shadow-md';
+                } else {
+                    btn.className = 'choice-button bg-slate-200 text-slate-500 text-base md:text-lg forced-disabled-look';
+                }
+            });
+        }
+    }
+
+    function proceedToNext() {
+        if (proceedTimeoutId) { clearTimeout(proceedTimeoutId); proceedTimeoutId = null; }
+        isWaitingToProceed = false;
+        displayQuestion();
+    }
+
+    function showResults() {
+        endTime = new Date();
+        const timeDiff = Math.round((endTime - startTime) / 1000);
+        const totalQuestions = currentSetData.length;
+        const currentScore = isRedoing ? (totalQuestions - incorrectAnswers.length) : score;
+        const percentage = totalQuestions > 0 ? Math.round((currentScore / totalQuestions) * 100) : 0;
+
+        resultsHeadingEl.textContent = isRedoing ? 'Review Complete!' : `${currentSetData.setName || 'Session'} Complete!`;
+        scoreDisplayEl.textContent = `${currentScore} / ${totalQuestions}`;
+        percentageEl.textContent = `${percentage}`;
+        timeTakenEl.textContent = `${timeDiff}s`;
+
+        // Use teal for energy theme encouragement
+        if (percentage === 100) encouragementTextEl.textContent = isRedoing ? "Perfect review! All clear." : "Outstanding! You're an energy expert!";
+        else if (percentage >= 70) encouragementTextEl.textContent = isRedoing ? "Good review! Keep it up." : "Great energy! Keep up the learning!";
+        else encouragementTextEl.textContent = isRedoing ? "Keep reviewing to master these!" : "Well done! Power up with more practice!";
+        encouragementTextEl.className = `text-lg font-semibold mb-6 ${percentage === 100 ? 'text-emerald-700' : percentage >= 70 ? 'text-teal-700' : 'text-orange-700'}`;
+
+
+        flashcardScreen.classList.add('hidden');
+        resultsScreen.classList.remove('hidden');
+
+        // Rocket animation
+        const trackWidth = raceTrackContainer.offsetWidth;
+        const effectiveTrackWidth = trackWidth - rocketEl.offsetWidth; 
+        
+        rocketEl.style.left = '0px'; 
+        raceTrackFillEl.style.width = '0px';
+
+        requestAnimationFrame(() => {
+            setTimeout(() => { 
+                const finalRocketPosition = Math.max(0, (percentage / 100) * effectiveTrackWidth);
+                rocketEl.style.left = `${finalRocketPosition}px`;
+                raceTrackFillEl.style.width = `${finalRocketPosition}px`;
+            }, 100);
+        });
+
+
+        incorrectList.innerHTML = '';
+        const incorrectAnswersForDisplay = incorrectAnswers; 
+        if (incorrectAnswersForDisplay.length > 0) {
+            incorrectListContainer.classList.remove('hidden'); noIncorrectText.classList.add('hidden');
+            incorrectAnswersForDisplay.forEach(item => {
+                const li = document.createElement('li');
+                li.innerHTML = `<b>Q:</b> ${item.questionData.question}<br/><b>Your:</b> <span class="text-red-500">${item.userAnswer}</span><br/><b>Correct:</b> <span class="text-emerald-600">${item.questionData.correctAnswer}</span>`;
+                incorrectList.appendChild(li);
+            });
+            redoIncorrectButton.classList.remove('hidden');
+            redoIncorrectButton.classList.toggle('hidden', isRedoing || incorrectAnswersForDisplay.length === 0);
+
+        } else {
+            incorrectListContainer.classList.add('hidden'); noIncorrectText.classList.remove('hidden');
+            redoIncorrectButton.classList.add('hidden');
+        }
+         redoIncorrectButton.disabled = incorrectAnswersForDisplay.length === 0;
+
+
+        sendResultsToGoogleSheet({
+            setName: currentSetData.setName || "Unknown Set",
+            score: currentScore,
+            totalQuestions: totalQuestions,
+            percentage: percentage,
+            timeTaken: timeDiff,
+            incorrectAnswersJSON: JSON.stringify(incorrectAnswersForDisplay.map(item => ({ 
+                question: item.questionData.question,
+                userAnswer: item.userAnswer,
+                correctAnswer: item.questionData.correctAnswer
+            }))),
+            os: navigator.platform || 'N/A',
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'N/A',
+            name: userName,
+            timestamp: new Date().toISOString() 
+        });
+
+        if (isRedoing) {
+            incorrectAnswers = []; 
+            isRedoing = false;
+        }
+    }
+
+    function sendResultsToGoogleSheet(data) {
+        fetch(APPS_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({payloadType: 'flashcardResults', ...data }) 
+        })
+        .then(() => { 
+            console.log("Google Apps Script request sent. Check server-side logs for confirmation.");
+        })
+        .catch(err => {
+            console.error("Failed to send results to Google Apps Script:", err);
+        });
+    }
+
+    function redoIncorrect() {
+        if (incorrectAnswers.length === 0) {
+            alert("No incorrect answers from the last session to redo!");
+            return;
+        }
+        const questionsToRedo = incorrectAnswers.map(item => item.questionData);
+        const originalSetName = currentSetData.setName.replace(" (Redo)", "");
+        
+        currentSetData = questionsToRedo;
+        currentSetData.setName = `${originalSetName} (Redo)`;
+
+        currentQuestionIndex = 0;
+        incorrectAnswers = []; 
+        isRedoing = true;
+        resultsScreen.classList.add('hidden');
+        flashcardScreen.classList.remove('hidden');
+        startTime = new Date();
+        updateProgress(); 
+        displayQuestion();
+    }
+
+    function showSetSelection() {
+        if (proceedTimeoutId) { clearTimeout(proceedTimeoutId); proceedTimeoutId = null; }
+        isWaitingToProceed = false;
+        isRedoing = false; 
+
+        nameModal.style.display = 'none';
+        flashcardScreen.classList.add('hidden');
+        resultsScreen.classList.add('hidden');
+        setSelectionScreen.classList.remove('hidden');
+
+        // Use teal for energy theme progress bar
+        progressBarFill.classList.remove('bg-indigo-600');
+        progressBarFill.classList.add('bg-teal-600');
+        progressText.textContent = `0 / ${QUESTIONS_PER_SET}`; 
+        progressBarFill.style.width = '0%';
+        populateStartButton();
+    }
+
+    // --- Initialization ---
+    document.addEventListener('DOMContentLoaded', () => {
+        userName = localStorage.getItem(USER_NAME_STORAGE_KEY) || '';
+        // Update progress bar color for energy theme on initial load if going straight to set selection
+        progressBarFill.classList.remove('bg-indigo-600');
+        progressBarFill.classList.add('bg-teal-600');
+        // Update rocket race track fill for energy theme
+        raceTrackFillEl.classList.remove('bg-blue-500'); // Assuming previous was blue
+        raceTrackFillEl.classList.add('bg-teal-500');
+
+
+        if (userName) {
+            showSetSelection(); 
+        } else {
+            nameModal.style.display = 'flex';
+            userNameInput.focus();
+        }
+    });
+</script>
+
+</body>
+</html>
