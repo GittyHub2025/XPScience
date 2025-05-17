@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Interactive Flashcard App - Electricity</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-8px); }
+            20%, 40%, 60%, 80% { transform: translateX(8px); }
+        }
+        .shake { animation: shake 0.5s ease-in-out; }
+
+        .correct-state-static {
+            background-color: #22c55e !important;
+            color: white !important;
+        }
+        .correct-state-static #questionText { display: none !important; }
+        .correct-state-static #feedbackText,
+        .correct-state-static #feedbackIconContainer,
+        .correct-state-static #questionImagePlaceholder { color: white !important; }
+
+        .incorrect-state {
+            background-color: #ef4444 !important;
+            color: white !important;
+            border-color: #b91c1c !important;
+        }
+        .incorrect-state #questionText,
+        .incorrect-state #feedbackText,
+        .incorrect-state #feedbackIconContainer,
+        .incorrect-state #questionImagePlaceholder { color: white !important; }
+        .incorrect-state #feedbackText .prompt-guidance {
+            font-size: 0.875rem; display: block; margin-top: 0.5rem; font-weight: normal;
+        }
+
+        .choice-button, .action-button {
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+            border-radius: 0.5rem; font-weight: 600;
+            padding: 0.75rem 0.5rem; text-align: center;
+            border: 1px solid transparent;
+        }
+        .choice-button:hover:not(:disabled), .action-button:hover {
+            transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+        }
+        .choice-button:active:not(:disabled), .action-button:active {
+            transform: translateY(0px); box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .choice-button:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
+        .choice-button.forced-disabled-look { opacity: 0.5; }
+        .choice-button:disabled:hover { transform: none; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+
+        .clickable-card { cursor: pointer; }
+        #progressBarFill { transition: width 0.3s ease-out; }
+        #confettiCanvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999; }
+        
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.6); align-items: center; justify-content: center; }
+        .modal-content { background-color: #fefefe; margin: auto; padding: 20px; border: 1px solid #888; width: 90%; max-width: 500px; border-radius: 0.5rem; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+
+        .race-track-container { position: relative; width: 100%; height: 30px; margin-top: 20px; margin-bottom: 20px; z-index: 1; }
+        .race-track { position: absolute; bottom: 0; left: 0; width: calc(100% - 30px); height: 10px; background-color: #d1d5db; border-radius: 5px; z-index: 2; }
+        .race-track-fill { position: absolute; bottom: 0; left: 0; height: 10px; background-color: #3b82f6; border-radius: 5px; width: 0%; z-index: 3; }
+        .rocket { position: absolute; bottom: -8px; left: 0; font-size: 36px; transform: translateX(-50%); z-index: 10; }
+        .checkered-flag { position: absolute; bottom: -8px; right: 0; font-size: 24px; transform: translateX(50%); z-index: 10; }
+
+        #questionText { word-break: break-word; hyphens: auto; }
+        .choice-button { white-space: normal; word-break: break-word; line-height: 1.4; min-height: 60px; display: flex; align-items: center; justify-content: center; }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-sky-200 via-indigo-200 to-purple-200 min-h-screen flex items-center justify-center p-4">
+
+    <div id="appContainer" class="w-full max-w-md mx-auto">
+
+        <!-- Name Input Modal -->
+         <div id="nameModal" class="modal">
+             <div class="modal-content text-center">
+                 <h2 class="text-xl md:text-2xl font-semibold mb-4 text-indigo-700">Welcome, PSLE Learner!</h2>
+                 <p class="text-slate-600 mb-4">Please enter your name to get started with your Electricity revision.</p>
+                 <input type="text" id="userNameInput" placeholder="Your Name" class="w-full p-2 border border-slate-300 rounded mb-4 focus:ring-indigo-500 focus:border-indigo-500 text-center text-lg">
+                 <button onclick="saveUserName()" class="action-button bg-indigo-500 hover:bg-indigo-600 text-white w-full py-3 px-6 text-lg">Start Revising!</button>
+             </div>
+         </div>
+
+        <!-- Set Selection Screen -->
+        <div id="setSelectionScreen" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-lg text-center">
+            <h1 class="text-2xl md:text-3xl font-bold text-indigo-700 mb-6">Electricity Revision</h1>
+            <p class="text-slate-600 mb-8">Choose a set to test your knowledge!</p>
+            <div id="setButtonsContainer" class="grid grid-cols-1 gap-4">
+                <!-- Buttons for flashcard sets will be dynamically added here by JS -->
+            </div>
+        </div>
+
+        <!-- Flashcard Screen -->
+        <div id="flashcardScreen" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-lg">
+            <div class="mb-6">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm font-medium text-slate-600">Progress</span>
+                    <span id="progressText" class="text-sm font-medium text-indigo-700">0 / 0</span> </div>
+                <div class="w-full bg-slate-200 rounded-full h-2.5">
+                    <div id="progressBarFill" class="bg-indigo-600 h-2.5 rounded-full" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div id="flashcard" class="bg-white border border-slate-300 rounded-lg p-6 mb-6 text-center min-h-[200px] flex flex-col items-center justify-center transition-colors duration-300">
+                 <div id="flashcardContent" class="w-full flex flex-col items-center justify-center">
+                     <div id="feedbackIconContainer" class="hidden text-7xl md:text-8xl mb-2"></div>
+                     <img id="questionImage" src="" alt="Question image" class="hidden mx-auto mb-4 max-h-40 h-auto w-auto object-contain rounded">
+                     <p id="questionText" class="text-lg md:text-xl font-semibold text-slate-800"></p>
+                     <p id="feedbackText" class="mt-2 text-base md:text-lg font-semibold"></p>
+                     <p id="continueText" class="mt-4 text-sm text-slate-500 hidden">Tap card to continue...</p>
+                 </div>
+            </div>
+
+            <div id="answerChoices" class="grid grid-cols-1 gap-3 md:gap-4">
+                <button id="choice1" class="choice-button bg-slate-100 hover:bg-slate-200 text-slate-700 text-base md:text-lg"></button>
+                <button id="choice2" class="choice-button bg-slate-100 hover:bg-slate-200 text-slate-700 text-base md:text-lg"></button>
+                <button id="choice3" class="choice-button bg-slate-100 hover:bg-slate-200 text-slate-700 text-base md:text-lg"></button>
+            </div>
+             <button onclick="showSetSelection()" class="action-button mt-6 bg-slate-500 hover:bg-slate-600 text-white w-full text-sm py-3 px-6">Back to Set Selection</button>
+        </div>
+
+        <!-- Results Screen -->
+        <div id="resultsScreen" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-lg text-center">
+            <h2 id="resultsHeading" class="text-2xl md:text-3xl font-bold text-indigo-700 mb-4"></h2>
+
+            <div class="bg-emerald-500 text-white p-4 rounded-lg mb-6">
+                <p class="text-lg md:text-xl font-semibold mb-1">Your Score:</p>
+                <p id="scoreDisplay" class="text-4xl md:text-5xl font-bold italic"></p>
+            </div>
+
+            <div class="race-track-container">
+                <div class="race-track"></div>
+                <div id="raceTrackFill" class="race-track-fill"></div>
+                <span id="rocketEl" class="rocket">🚀</span>
+                <span id="checkeredFlag" class="checkered-flag">🏁</span>
+            </div>
+            <p class="text-lg text-slate-700 mb-2">Percentage: <span id="percentage" class="font-semibold"></span>%</p>
+            <p class="text-lg text-slate-700 mb-6">Time: <span id="timeTaken" class="font-semibold"></span> seconds</p>
+
+            <p id="encouragementText" class="text-lg text-indigo-700 font-semibold mb-6"></p>
+            <div id="incorrectListContainer" class="mb-6 text-left">
+                <h3 class="text-xl font-semibold text-red-600 mb-3">Review Incorrect Answers:</h3>
+                <ul id="incorrectList" class="list-disc list-inside space-y-1 text-slate-600"></ul>
+                 <p id="noIncorrectText" class="text-emerald-600 font-semibold hidden">Great job, no incorrect answers!</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button id="redoIncorrectButton" onclick="redoIncorrect()" class="action-button bg-orange-500 hover:bg-orange-600 text-white w-full py-3 px-6">Redo Incorrect</button>
+                <button onclick="showSetSelection()" class="action-button bg-indigo-500 hover:bg-indigo-600 text-white w-full py-3 px-6">Try Another Set</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="confettiCanvas"></canvas>
+
+   <script>
+    // --- Configuration ---
+    const QUESTIONS_PER_SET = 20; // Number of questions to use from each set
+    const AUTO_PROCEED_DELAY = 1200; 
+    const USER_NAME_STORAGE_KEY = 'flashcardAppUserName_electricity_v1'; // Unique key for this app version
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx6NT33MFycqk4WKipictaOel8xdhyCDGKchgBmrgWfR6_e-7_QmjPe5psaZcVlm28OPQ/exec';
+
+    // --- Flashcard Set Data for PSLE Electricity ---
+
+    const flashcardSet1_Electricity = [ // Electrical Basics & Simple Circuits
+        { id: 'e1q1', question: "Which of these is a common portable source of electricity for small devices?", options: ["Battery", "Wall socket", "Power station"], correctAnswer: "Battery", image: null },
+        { id: 'e1q2', question: "What is the main job of a switch in an electrical circuit?", options: ["To produce light", "To open or close the circuit", "To store electricity"], correctAnswer: "To open or close the circuit", image: null },
+        { id: 'e1q3', question: "For a bulb to light up in a simple circuit, the circuit must be:", options: ["Open", "Closed", "Short"], correctAnswer: "Closed", image: null },
+        { id: 'e1q4', question: "Which part of a circuit connects all the components together?", options: ["Bulb", "Battery", "Wire"], correctAnswer: "Wire", image: null },
+        { id: 'e1q5', question: "What happens to a bulb in a closed circuit if the switch is opened?", options: ["It gets brighter", "It goes off", "Nothing changes"], correctAnswer: "It goes off", image: null },
+        { id: 'e1q6', question: "Which of these converts chemical energy into electrical energy?", options: ["Bulb", "Switch", "Battery"], correctAnswer: "Battery", image: null },
+        { id: 'e1q7', question: "An 'open circuit' means there is a ____ in the path of electricity.", options: ["Gap", "Bridge", "Source"], correctAnswer: "Gap", image: null },
+        { id: 'e1q8', question: "What does a bulb convert electrical energy into?", options: ["Sound and heat energy", "Light and heat energy", "Chemical and light energy"], correctAnswer: "Light and heat energy", image: null },
+        { id: 'e1q9', question: "If you remove a battery from a simple circuit with a lit bulb, what happens?", options: ["The bulb gets dimmer", "The bulb goes off", "The bulb gets brighter"], correctAnswer: "The bulb goes off", image: null },
+        { id: 'e1q10', question: "The flow of electricity in a circuit is called electric ____.", options: ["Charge", "Power", "Current"], correctAnswer: "Current", image: null },
+        { id: 'e1q11', question: "Which of these items uses electricity from the mains (wall socket)?", options: ["Torchlight", "Television", "Toy car"], correctAnswer: "Television", image: null },
+        { id: 'e1q12', question: "In a simple circuit, which component provides the 'push' for electricity to flow?", options: ["Wire", "Bulb", "Battery"], correctAnswer: "Battery", image: null },
+        { id: 'e1q13', question: "If a wire in a closed circuit is cut, the circuit becomes:", options: ["Still closed", "Open", "More powerful"], correctAnswer: "Open", image: null },
+        { id: 'e1q14', question: "What is the purpose of the plastic coating around electrical wires?", options: ["To make it look nice", "To act as an insulator", "To make it conduct better"], correctAnswer: "To act as an insulator", image: null },
+        { id: 'e1q15', question: "A complete path for electricity to flow is called a:", options: ["Circuit", "Current", "Charge"], correctAnswer: "Circuit", image: null },
+        { id: 'e1q16', question: "If a switch is 'on', the circuit is:", options: ["Open", "Closed", "Broken"], correctAnswer: "Closed", image: null },
+        { id: 'e1q17', question: "Which of these is NOT essential for a simple circuit to light a bulb?", options: ["Battery", "Bulb holder", "Switch"], correctAnswer: "Switch", image: null }, // A switch is useful, but not strictly essential for the most basic circuit
+        { id: 'e1q18', question: "What happens if you connect a wire directly from the positive to the negative terminal of a battery without a bulb?", options: ["The battery charges", "A short circuit occurs", "Nothing happens"], correctAnswer: "A short circuit occurs", image: null },
+        { id: 'e1q19', question: "The two ends of a battery are called:", options: ["Poles", "Connectors", "Terminals"], correctAnswer: "Terminals", image: null },
+        { id: 'e1q20', question: "What is the unit for measuring electric current?", options: ["Volt", "Watt", "Ampere"], correctAnswer: "Ampere", image: null }
+    ];
+
+    const flashcardSet2_Electricity = [ // Conductors, Insulators & Circuit Behavior
+        { id: 'e2q1', question: "Which of the following materials is a good conductor of electricity?", options: ["Plastic", "Rubber", "Copper"], correctAnswer: "Copper", image: null },
+        { id: 'e2q2', question: "A material that does NOT allow electricity to pass through it easily is called an:", options: ["Conductor", "Insulator", "Amplifier"], correctAnswer: "Insulator", image: null },
+        { id: 'e2q3', question: "Why are metals like copper and aluminum used for electrical wires?", options: ["They are insulators", "They are good conductors", "They are cheap"], correctAnswer: "They are good conductors", image: null },
+        { id: 'e2q4', question: "Which of these is an example of an electrical insulator?", options: ["Silver spoon", "Glass rod", "Iron nail"], correctAnswer: "Glass rod", image: null },
+        { id: 'e2q5', question: "If you add more bulbs in a simple series circuit (one path), what happens to the brightness of each bulb?", options: ["They get brighter", "They get dimmer", "Brightness stays the same"], correctAnswer: "They get dimmer", image: null },
+        { id: 'e2q6', question: "If you add more batteries in series (positive to negative) to a simple circuit, what generally happens to the bulb's brightness?", options: ["It gets dimmer", "It gets brighter", "Nothing changes"], correctAnswer: "It gets brighter", image: null },
+        { id: 'e2q7', question: "The filament inside a light bulb is usually made of a material that is a:", options: ["Good insulator", "Poor conductor that heats up", "Liquid conductor"], correctAnswer: "Poor conductor that heats up", image: null }, // More accurately, a resistor that heats up, but "poor conductor" is simpler for PSLE
+        { id: 'e2q8', question: "What property of a material determines if it's a conductor or an insulator?", options: ["Its color", "Its ability to allow current flow", "Its weight"], correctAnswer: "Its ability to allow current flow", image: null },
+        { id: 'e2q9', question: "If one bulb blows (filament breaks) in a simple series circuit, what happens to the other bulbs?", options: ["They get brighter", "They all go off", "They stay lit"], correctAnswer: "They all go off", image: null },
+        { id: 'e2q10', question: "Why is the outer casing of a plug usually made of plastic?", options: ["Plastic is a good conductor", "Plastic is an insulator for safety", "Plastic is shiny"], correctAnswer: "Plastic is an insulator for safety", image: null },
+        { id: 'e2q11', question: "Which of these liquids is a relatively good conductor of electricity?", options: ["Pure water", "Salt water", "Oil"], correctAnswer: "Salt water", image: null },
+        { id: 'e2q12', question: "If you want to test if a material is a conductor, you would place it in a circuit and see if:", options: ["The battery gets hot", "The bulb lights up", "The wires melt"], correctAnswer: "The bulb lights up", image: null },
+        { id: 'e2q13', question: "A short circuit happens when electricity takes an unintended path with very low ____.", options: ["Voltage", "Resistance", "Current"], correctAnswer: "Resistance", image: null },
+        { id: 'e2q14', question: "What is the main risk of a short circuit?", options: ["The bulb shines too brightly", "Overheating and fire", "The battery recharges"], correctAnswer: "Overheating and fire", image: null },
+        { id: 'e2q15', question: "In a circuit with two bulbs, if one bulb is dimmer than the other, it might mean:", options: ["It's a better conductor", "It has higher resistance or less current", "It's newer"], correctAnswer: "It has higher resistance or less current", image: null },
+        { id: 'e2q16', question: "Which human body part acts as a conductor, especially when wet?", options: ["Hair", "Skin", "Nails"], correctAnswer: "Skin", image: null },
+        { id: 'e2q17', question: "Objects that resist the flow of electric current are said to have high:", options: ["Conductance", "Voltage", "Resistance"], correctAnswer: "Resistance", image: null },
+        { id: 'e2q18', question: "Why should you not use a device with a frayed (damaged) electrical cord?", options: ["It looks untidy", "Exposed wires can cause shocks or shorts", "It uses more electricity"], correctAnswer: "Exposed wires can cause shocks or shorts", image: null },
+        { id: 'e2q19', question: "If you increase the resistance in a circuit while keeping the voltage the same, the current will:", options: ["Increase", "Decrease", "Stay the same"], correctAnswer: "Decrease", image: null },
+        { id: 'e2q20', question: "A material that allows *some* electricity to flow, but not as well as a conductor, is sometimes called a:", options: ["Superconductor", "Semiconductor", "Perfect insulator"], correctAnswer: "Semiconductor", image: null } // A bit advanced for PSLE but tests understanding of the spectrum.
+    ];
+
+    const flashcardSet3_Electricity = [ // Series, Parallel Circuits & Electrical Safety
+        { id: 'e3q1', question: "In a series circuit, how many paths are there for the current to flow?", options: ["One", "Two", "Many"], correctAnswer: "One", image: null },
+        { id: 'e3q2', question: "In a parallel circuit, if one bulb blows, what happens to the other bulbs connected in parallel?", options: ["They all go off", "They remain lit", "They get dimmer"], correctAnswer: "They remain lit", image: null },
+        { id: 'e3q3', question: "Which type of circuit is commonly used for household lighting, so if one bulb fails, others stay on?", options: ["Series circuit", "Parallel circuit", "Open circuit"], correctAnswer: "Parallel circuit", image: null },
+        { id: 'e3q4', question: "If you add more bulbs in parallel to a circuit with a battery, what happens to the brightness of each bulb (assuming ideal battery)?", options: ["They all get dimmer", "Their brightness remains roughly the same", "They all get brighter"], correctAnswer: "Their brightness remains roughly the same", image: null }, // This is a simplification for PSLE level.
+        { id: 'e3q5', question: "Why should you never touch electrical switches or appliances with wet hands?", options: ["Water cleans the switch", "Water is a good conductor of electricity", "Water makes your hands slippery"], correctAnswer: "Water is a good conductor of electricity", image: null },
+        { id: 'e3q6', "question": "What is the purpose of a fuse or circuit breaker in an electrical system?", "options": ["To increase voltage", "To protect against too much current", "To store electricity"], "correctAnswer": "To protect against too much current", image: null },
+        { id: 'e3q7', question: "Overloading a wall socket by plugging in too many appliances can cause:", options: ["The appliances to run faster", "A fire hazard", "The electricity bill to decrease"], correctAnswer: "A fire hazard", image: null },
+        { id: 'e3q8', question: "If you see someone getting an electric shock, what is the FIRST thing you should NOT do?", options: ["Call for help", "Touch the person directly", "Switch off the main power supply"], correctAnswer: "Touch the person directly", image: null },
+        { id: 'e3q9', question: "In a series circuit with two identical bulbs, if the total voltage from the battery is 3V, what is the approximate voltage across each bulb?", options: ["3V", "1.5V", "0V"], correctAnswer: "1.5V", image: null }, // Voltage divides in series
+        { id: 'e3q10', question: "In a parallel circuit with two identical bulbs connected to a 3V battery, what is the approximate voltage across each bulb?", options: ["3V", "1.5V", "6V"], correctAnswer: "3V", image: null }, // Voltage is the same across parallel branches
+        { id: 'e3q11', question: "Which symbol is commonly used to represent a light bulb in a circuit diagram?", options: ["A circle with a cross inside", "A rectangle", "A zigzag line"], correctAnswer: "A circle with a cross inside", image: null },
+        { id: 'e3q12', question: "Why is it important not to fly kites near overhead power lines?", options: ["The kite might get stuck", "Power lines carry high voltage electricity", "It scares birds"], correctAnswer: "Power lines carry high voltage electricity", image: null },
+        { id: 'e3q13', question: "What does the 'Earth' wire in a three-pin plug do?", options: ["Provides extra power", "Carries fault current safely to the ground", "Makes the plug heavier"], correctAnswer: "Carries fault current safely to the ground", image: null },
+        { id: 'e3q14', question: "If you are building a circuit and the bulb doesn't light up, what is a common first thing to check?", options: ["The color of the wires", "If the circuit is closed and components are working", "The room temperature"], correctAnswer: "If the circuit is closed and components are working", image: null },
+        { id: 'e3q15', question: "Which of these actions is safe when dealing with electricity?", options: ["Using appliances with damaged cords", "Repairing an electrical appliance while it's plugged in", "Unplugging an appliance by pulling the plug, not the cord"], correctAnswer: "Unplugging an appliance by pulling the plug, not the cord", image: null },
+        { id: 'e3q16', question: "When comparing a series and parallel circuit with the same number of identical bulbs and batteries, which circuit will likely drain the battery faster?", options: ["Series circuit", "Parallel circuit", "Both at the same rate"], correctAnswer: "Parallel circuit", image: null }, // Because total current drawn is higher.
+        { id: 'e3q17', question: "What should you do if you see a fallen power line?", options: ["Try to move it", "Stay far away and report it", "Test if it's live"], correctAnswer: "Stay far away and report it", image: null },
+        { id: 'e3q18', question: "A device that uses electricity to produce motion is likely using a(n):", options: ["Heater", "Motor", "Light bulb"], correctAnswer: "Motor", image: null },
+        { id: 'e3q19', question: "True or False: Electricity always flows from negative to positive terminal.", options: ["True (electron flow)", "False (conventional current)", "Sometimes"], correctAnswer: "False (conventional current)", image: null }, // PSLE usually teaches conventional current (positive to negative).
+        { id: 'e3q20', question: "What is the main danger of inserting metal objects into a wall socket?", options: ["It will clean the socket", "Risk of severe electric shock", "It might break the object"], correctAnswer: "Risk of severe electric shock", image: null }
+    ];
+
+
+    // --- State Variables ---
+    let currentSetData = [];      
+    let currentQuestionIndex = 0;
+    let score = 0;
+    let incorrectAnswers = [];    
+    let startTime;
+    let endTime;
+    let isRedoing = false;        
+    let proceedTimeoutId = null;  
+    let isWaitingToProceed = false; 
+    let userName = localStorage.getItem(USER_NAME_STORAGE_KEY) || '';
+
+    // --- Sound Synthesis (Tone.js) ---
+    const correctSound = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.005, decay: 0.1, sustain: 0.05, release: 0.2 }, }).toDestination();
+    const incorrectSound = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.2 } }).toDestination();
+
+    // --- Confetti ---
+    const confettiCanvas = document.getElementById('confettiCanvas');
+    const myConfetti = confetti.create(confettiCanvas, { resize: true, useWorker: true });
+
+    // --- DOM Elements ---
+    const nameModal = document.getElementById('nameModal');
+    const userNameInput = document.getElementById('userNameInput');
+    const setSelectionScreen = document.getElementById('setSelectionScreen');
+    const setButtonsContainer = document.getElementById('setButtonsContainer');
+    const flashcardScreen = document.getElementById('flashcardScreen');
+    const resultsScreen = document.getElementById('resultsScreen');
+    const progressText = document.getElementById('progressText');
+    const progressBarFill = document.getElementById('progressBarFill');
+    const flashcard = document.getElementById('flashcard');
+    const questionImageEl = document.getElementById('questionImage');
+    const questionText = document.getElementById('questionText');
+    const feedbackText = document.getElementById('feedbackText');
+    const feedbackIconContainer = document.getElementById('feedbackIconContainer');
+    const continueText = document.getElementById('continueText');
+    const choiceButtons = [ document.getElementById('choice1'), document.getElementById('choice2'), document.getElementById('choice3') ];
+    const scoreDisplayEl = document.getElementById('scoreDisplay');
+    const percentageEl = document.getElementById('percentage');
+    const timeTakenEl = document.getElementById('timeTaken');
+    const incorrectListContainer = document.getElementById('incorrectListContainer');
+    const incorrectList = document.getElementById('incorrectList');
+    const noIncorrectText = document.getElementById('noIncorrectText');
+    const redoIncorrectButton = document.getElementById('redoIncorrectButton');
+    const encouragementTextEl = document.getElementById('encouragementText');
+    const resultsHeadingEl = document.getElementById('resultsHeading');
+    const raceTrackContainer = document.querySelector('#resultsScreen .race-track-container');
+    const raceTrackFillEl = document.getElementById('raceTrackFill');
+    const rocketEl = document.getElementById('rocketEl');
+
+    // --- Event Listeners ---
+    flashcard.addEventListener('click', () => {
+        if (isWaitingToProceed &&
+            !flashcard.classList.contains('incorrect-state') &&
+            (flashcard.classList.contains('correct-state-static') || flashcard.classList.contains('clickable-card'))) {
+            proceedToNext();
+        }
+    });
+    userNameInput.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            saveUserName();
+        }
+    });
+
+    // --- Utility Functions ---
+    function shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+    }
+
+    // --- Core Application Logic ---
+    function populateStartButton() {
+        setButtonsContainer.innerHTML = ''; 
+
+        const availableSets = [
+            { name: "Set 1: Basics & Simple Circuits", data: flashcardSet1_Electricity },
+            { name: "Set 2: Conductors & Insulators", data: flashcardSet2_Electricity },
+            { name: "Set 3: Series, Parallel & Safety", data: flashcardSet3_Electricity }
+        ];
+
+        availableSets.forEach(setInfo => {
+            if (setInfo.data.length >= QUESTIONS_PER_SET) {
+                const button = document.createElement('button');
+                button.textContent = `Start ${setInfo.name}`;
+                button.className = `action-button w-full py-3 px-6 bg-indigo-500 hover:bg-indigo-600 text-white`;
+                button.onclick = () => startFlashcardSession(setInfo.data, setInfo.name);
+                setButtonsContainer.appendChild(button);
+            } else {
+                const errorP = document.createElement('p');
+                errorP.className = 'text-red-500 text-sm';
+                errorP.textContent = `Error: "${setInfo.name}" does not have enough questions (${setInfo.data.length} found, ${QUESTIONS_PER_SET} required).`;
+                setButtonsContainer.appendChild(errorP);
+                console.error(`The set "${setInfo.name}" does not meet the ${QUESTIONS_PER_SET} question requirement.`);
+            }
+        });
+         if (setButtonsContainer.children.length === 0) {
+            setButtonsContainer.innerHTML = '<p class="text-red-500">No flashcard sets are currently available or correctly configured.</p>';
+        }
+    }
+
+    function saveUserName() {
+        const name = userNameInput.value.trim();
+        userName = name ? name : 'Learner';
+        localStorage.setItem(USER_NAME_STORAGE_KEY, userName);
+        nameModal.style.display = 'none';
+        showSetSelection();
+    }
+
+    function startFlashcardSession(selectedSet, setName) { 
+        Tone.start().catch(e => console.warn("Audio context could not start on user interaction:", e));
+
+        let fullSetCopy = [...selectedSet]; 
+        if (fullSetCopy.length < QUESTIONS_PER_SET) {
+            console.error(`Cannot start set "${setName}": Needs ${QUESTIONS_PER_SET} questions, has ${fullSetCopy.length}.`);
+            alert(`Error: The set "${setName}" does not have enough questions to start the session.`);
+            return;
+        }
+
+        shuffleArray(fullSetCopy);
+        currentSetData = fullSetCopy.slice(0, QUESTIONS_PER_SET); 
+        currentSetData.setName = setName; 
+
+        currentQuestionIndex = 0;
+        score = 0;
+        incorrectAnswers = [];
+        isRedoing = false;
+
+        setSelectionScreen.classList.add('hidden');
+        resultsScreen.classList.add('hidden');
+        flashcardScreen.classList.remove('hidden');
+        updateProgress(); 
+        startTime = new Date();
+        displayQuestion();
+    }
+
+    function resetCardState() {
+        if (proceedTimeoutId) { clearTimeout(proceedTimeoutId); proceedTimeoutId = null; }
+        isWaitingToProceed = false;
+
+        flashcard.classList.remove('shake', 'correct-state-static', 'incorrect-state', 'clickable-card');
+        flashcard.style.backgroundColor = ''; flashcard.style.color = '';
+        questionText.style.color = '';
+        questionText.classList.remove('hidden');
+        feedbackText.textContent = '';
+        feedbackText.className = 'mt-2 text-base md:text-lg font-semibold';
+        feedbackText.style.color = '';
+        feedbackIconContainer.classList.add('hidden');
+        feedbackIconContainer.innerHTML = '';
+        flashcard.style.cursor = 'default';
+        continueText.classList.add('hidden');
+        questionImageEl.classList.add('hidden'); questionImageEl.src = '';
+
+        choiceButtons.forEach(btn => {
+            btn.className = 'choice-button bg-slate-100 hover:bg-slate-200 text-slate-700 text-base md:text-lg';
+        });
+    }
+
+    function displayQuestion() {
+        resetCardState();
+        if (currentQuestionIndex >= currentSetData.length) {
+            showResults();
+            return;
+        }
+        const questionData = currentSetData[currentQuestionIndex];
+        questionText.textContent = questionData.question;
+        if (questionData.image) {
+            questionImageEl.src = questionData.image;
+            questionImageEl.classList.remove('hidden');
+        }
+        let displayOptions = [...questionData.options];
+        shuffleArray(displayOptions);
+        choiceButtons.forEach((button, index) => {
+            if (displayOptions[index] !== undefined) {
+                button.textContent = displayOptions[index];
+                button.disabled = false;
+                button.dataset.answer = displayOptions[index];
+                button.onclick = () => checkAnswer(button);
+                button.style.display = '';
+            } else {
+                button.style.display = 'none'; 
+            }
+        });
+    }
+
+    function updateProgress() {
+        const totalQuestions = currentSetData.length;
+        const completed = currentQuestionIndex; 
+        const progressPercentage = totalQuestions > 0 ? (completed / totalQuestions) * 100 : 0;
+        progressText.textContent = `${completed} / ${totalQuestions}`;
+        progressBarFill.style.width = `${progressPercentage}%`;
+    }
+
+    function checkAnswer(button) {
+        Tone.start().catch(e => console.warn("Audio context failed to start on answer check:", e));
+        if (isWaitingToProceed && !flashcard.classList.contains('incorrect-state')) return;
+
+        const selectedAnswer = button.dataset.answer;
+        const questionData = currentSetData[currentQuestionIndex];
+        const correctAnswer = questionData.correctAnswer;
+        choiceButtons.forEach(btn => btn.disabled = true);
+
+        if (selectedAnswer === correctAnswer) {
+            if (!isRedoing) score++;
+            flashcard.classList.add('correct-state-static');
+            feedbackIconContainer.innerHTML = '<span class="text-7xl md:text-8xl">✓</span>';
+            feedbackIconContainer.classList.remove('hidden');
+            questionText.classList.add('hidden');
+            if (questionImageEl) questionImageEl.classList.add('hidden');
+            feedbackText.textContent = 'Correct!';
+            myConfetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+            correctSound.triggerAttackRelease("G5", "8n", Tone.now());
+            button.className = 'choice-button bg-emerald-600 text-white ring-2 ring-emerald-800 text-base md:text-lg shadow-md';
+            isWaitingToProceed = true;
+            flashcard.classList.add('clickable-card');
+            flashcard.style.cursor = 'pointer';
+            continueText.classList.remove('hidden');
+            if (proceedTimeoutId) clearTimeout(proceedTimeoutId);
+            proceedTimeoutId = setTimeout(proceedToNext, AUTO_PROCEED_DELAY);
+            currentQuestionIndex++; 
+            updateProgress(); 
+        } else {
+            flashcard.classList.add('shake', 'incorrect-state');
+            feedbackIconContainer.innerHTML = '<span class="text-7xl md:text-8xl">✗</span>';
+            feedbackIconContainer.classList.remove('hidden');
+            if (questionImageEl) questionImageEl.classList.add('hidden');
+            feedbackText.innerHTML = `Correct Answer: <span class="font-bold">${correctAnswer}</span><br><span class="prompt-guidance">Please click on the correct answer (in green) to move to the next question.</span>`;
+            incorrectSound.triggerAttackRelease("C3", "8n");
+            if (!isRedoing) {
+                incorrectAnswers.push({
+                    questionData: JSON.parse(JSON.stringify(questionData)), 
+                    userAnswer: selectedAnswer
+                });
+            }
+            continueText.classList.add('hidden');
+            isWaitingToProceed = false;
+            flashcard.classList.remove('clickable-card');
+            flashcard.style.cursor = 'default';
+            if (proceedTimeoutId) { clearTimeout(proceedTimeoutId); proceedTimeoutId = null; }
+            choiceButtons.forEach(btn => {
+                if (btn.dataset.answer === correctAnswer) {
+                    btn.className = 'choice-button bg-emerald-500 hover:bg-emerald-600 text-white text-base md:text-lg';
+                    btn.disabled = false;
+                    btn.onclick = function() {
+                        currentQuestionIndex++; 
+                        updateProgress(); 
+                        proceedToNext();
+                    };
+                } else if (btn === button) {
+                    btn.className = 'choice-button bg-red-700 text-white ring-2 ring-red-900 text-base md:text-lg shadow-md';
+                } else {
+                    btn.className = 'choice-button bg-slate-200 text-slate-500 text-base md:text-lg forced-disabled-look';
+                }
+            });
+        }
+    }
+
+    function proceedToNext() {
+        if (proceedTimeoutId) { clearTimeout(proceedTimeoutId); proceedTimeoutId = null; }
+        isWaitingToProceed = false;
+        displayQuestion();
+    }
+
+    function showResults() {
+        endTime = new Date();
+        const timeDiff = Math.round((endTime - startTime) / 1000);
+        const totalQuestions = currentSetData.length;
+        const currentScore = isRedoing ? (totalQuestions - incorrectAnswers.length) : score; 
+        const percentage = totalQuestions > 0 ? Math.round((currentScore / totalQuestions) * 100) : 0;
+
+        resultsHeadingEl.textContent = isRedoing ? 'Review Complete!' : `${currentSetData.setName || 'Session'} Complete!`;
+        scoreDisplayEl.textContent = `${currentScore} / ${totalQuestions}`;
+        percentageEl.textContent = `${percentage}`;
+        timeTakenEl.textContent = `${timeDiff}s`;
+
+        if (percentage === 100) encouragementTextEl.textContent = isRedoing ? "Perfect review! All clear." : "Outstanding! You're an electricity whiz!";
+        else if (percentage >= 70) encouragementTextEl.textContent = isRedoing ? "Good review! Keep it up." : "Great effort! You're learning fast!";
+        else encouragementTextEl.textContent = isRedoing ? "Keep reviewing to master these!" : "Well done! Keep practicing those circuits!";
+        encouragementTextEl.className = `text-lg font-semibold mb-6 ${percentage === 100 ? 'text-emerald-700' : percentage >= 70 ? 'text-indigo-700' : 'text-orange-700'}`;
+
+        flashcardScreen.classList.add('hidden');
+        resultsScreen.classList.remove('hidden');
+
+        const trackWidth = raceTrackContainer.offsetWidth, effectiveTrackWidth = trackWidth - 24; 
+        const animationDuration = 1500, animStartTime = performance.now();
+        rocketEl.style.left = '0px'; raceTrackFillEl.style.width = '0px';
+        function animateRocket(currentTime) {
+            const elapsedTime = currentTime - animStartTime, progress = Math.min(elapsedTime / animationDuration, 1);
+            const animatedPercentage = Math.round(progress * percentage);
+            const position = Math.max(0, (animatedPercentage / 100) * effectiveTrackWidth);
+            rocketEl.style.left = `${position}px`; raceTrackFillEl.style.width = `${position}px`;
+            if (progress < 1) requestAnimationFrame(animateRocket);
+            else { const finalPos = Math.max(0, (percentage / 100) * effectiveTrackWidth); rocketEl.style.left = `${finalPos}px`; raceTrackFillEl.style.width = `${finalPos}px`; }
+        }
+        requestAnimationFrame(animateRocket);
+
+        incorrectList.innerHTML = '';
+        const incorrectAnswersForDisplay = incorrectAnswers; 
+        if (incorrectAnswersForDisplay.length > 0) {
+            incorrectListContainer.classList.remove('hidden'); noIncorrectText.classList.add('hidden');
+            incorrectAnswersForDisplay.forEach(item => {
+                const li = document.createElement('li');
+                li.innerHTML = `<b>Q:</b> ${item.questionData.question}<br/><b>Your:</b> <span class="text-red-500">${item.userAnswer}</span><br/><b>Correct:</b> <span class="text-emerald-600">${item.questionData.correctAnswer}</span>`;
+                incorrectList.appendChild(li);
+            });
+            redoIncorrectButton.classList.toggle('hidden', isRedoing || incorrectAnswersForDisplay.length === 0);
+        } else {
+            incorrectListContainer.classList.add('hidden'); noIncorrectText.classList.remove('hidden');
+            redoIncorrectButton.classList.add('hidden');
+        }
+
+        sendResultsToGoogleSheet({
+            setName: currentSetData.setName || "Unknown Set",
+            score: currentScore,
+            totalQuestions: totalQuestions,
+            percentage: percentage,
+            timeTaken: timeDiff,
+            incorrectAnswersJSON: JSON.stringify(incorrectAnswersForDisplay.map(item => ({ 
+                question: item.questionData.question,
+                userAnswer: item.userAnswer,
+                correctAnswer: item.questionData.correctAnswer
+            }))),
+            os: navigator.platform || 'N/A',
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'N/A',
+            name: userName,
+            timestamp: new Date().toISOString() 
+        });
+
+        if (isRedoing) {
+            incorrectAnswers = []; 
+            isRedoing = false;
+        }
+    }
+
+    function sendResultsToGoogleSheet(data) {
+        fetch(APPS_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({payloadType: 'flashcardResults', ...data }) 
+        })
+        .then(() => { 
+            console.log("Google Apps Script request sent. Check server-side logs for confirmation.");
+        })
+        .catch(err => {
+            console.error("Failed to send results to Google Apps Script:", err);
+        });
+    }
+
+    function redoIncorrect() {
+        if (incorrectAnswers.length === 0) {
+            alert("No incorrect answers from the last session to redo!");
+            return;
+        }
+        currentSetData = incorrectAnswers.map(item => item.questionData);
+        currentSetData.setName = (currentSetData.setName || "Review") + " (Redo)";
+
+        currentQuestionIndex = 0;
+        let mistakesDuringRedo = [];
+        incorrectAnswers = mistakesDuringRedo;
+
+        isRedoing = true;
+        resultsScreen.classList.add('hidden');
+        flashcardScreen.classList.remove('hidden');
+        startTime = new Date();
+        updateProgress(); 
+        displayQuestion();
+    }
+
+    function showSetSelection() {
+        if (proceedTimeoutId) { clearTimeout(proceedTimeoutId); proceedTimeoutId = null; }
+        isWaitingToProceed = false;
+        isRedoing = false; 
+
+        nameModal.style.display = 'none';
+        flashcardScreen.classList.add('hidden');
+        resultsScreen.classList.add('hidden');
+        setSelectionScreen.classList.remove('hidden');
+
+        progressText.textContent = `0 / ${QUESTIONS_PER_SET}`; 
+        progressBarFill.style.width = '0%';
+        populateStartButton();
+    }
+
+    // --- Initialization ---
+    document.addEventListener('DOMContentLoaded', () => {
+        userName = localStorage.getItem(USER_NAME_STORAGE_KEY) || '';
+        if (userName) {
+            showSetSelection();
+        } else {
+            nameModal.style.display = 'flex';
+            userNameInput.focus();
+        }
+    });
+</script>
+
+</body>
+</html>
