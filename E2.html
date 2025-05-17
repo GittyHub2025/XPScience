@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>PSLE Electricity Flashcards</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-8px); }
+            20%, 40%, 60%, 80% { transform: translateX(8px); }
+        }
+        .shake { animation: shake 0.5s ease-in-out; }
+
+        .correct-state-static {
+            background-color: #22c55e !important; /* green-500 */
+            color: white !important;
+        }
+        .correct-state-static #questionText { display: none !important; }
+        .correct-state-static #feedbackText,
+        .correct-state-static #feedbackIconContainer,
+        .correct-state-static #questionImagePlaceholder { color: white !important; }
+
+        .incorrect-state {
+            background-color: #ef4444 !important; /* red-500 */
+            color: white !important;
+            border-color: #b91c1c !important; /* red-700 */
+        }
+        .incorrect-state #questionText,
+        .incorrect-state #feedbackText,
+        .incorrect-state #feedbackIconContainer,
+        .incorrect-state #questionImagePlaceholder { color: white !important; }
+        .incorrect-state #feedbackText .prompt-guidance {
+            font-size: 0.875rem; display: block; margin-top: 0.5rem; font-weight: normal;
+        }
+
+        .choice-button, .action-button {
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+            border-radius: 0.5rem; font-weight: 600;
+            padding: 0.75rem 0.5rem; text-align: center;
+            border: 1px solid transparent;
+        }
+        .choice-button:hover:not(:disabled), .action-button:hover {
+            transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+        }
+        .choice-button:active:not(:disabled), .action-button:active {
+            transform: translateY(0px); box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .choice-button:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
+        .choice-button.forced-disabled-look { opacity: 0.5; }
+        .choice-button:disabled:hover { transform: none; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+
+        .clickable-card { cursor: pointer; }
+        #progressBarFill { transition: width 0.3s ease-out; }
+        #confettiCanvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999; }
+        
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.6); align-items: center; justify-content: center; }
+        .modal-content { background-color: #fefefe; margin: auto; padding: 20px; border: 1px solid #888; width: 90%; max-width: 500px; border-radius: 0.5rem; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+
+        .race-track-container { position: relative; width: 100%; height: 30px; margin-top: 20px; margin-bottom: 20px; z-index: 1; }
+        .race-track { position: absolute; bottom: 0; left: 0; width: calc(100% - 30px); height: 10px; background-color: #d1d5db; border-radius: 5px; z-index: 2; }
+        .race-track-fill { position: absolute; bottom: 0; left: 0; height: 10px; background-color: #3b82f6; border-radius: 5px; width: 0%; z-index: 3; }
+        .rocket { position: absolute; bottom: -8px; left: 0; font-size: 36px; transform: translateX(-50%); z-index: 10; transition: left 1.5s ease-out; }
+        .checkered-flag { position: absolute; bottom: -8px; right: 0; font-size: 24px; transform: translateX(50%); z-index: 10; }
+
+        #questionText { word-break: break-word; hyphens: auto; }
+        .choice-button { white-space: normal; word-break: break-word; line-height: 1.4; min-height: 60px; display: flex; align-items: center; justify-content: center; }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-sky-200 via-indigo-200 to-purple-200 min-h-screen flex items-center justify-center p-4">
+
+    <div id="appContainer" class="w-full max-w-md mx-auto">
+
+        <!-- Name Input Modal -->
+         <div id="nameModal" class="modal">
+             <div class="modal-content text-center">
+                 <h2 class="text-xl md:text-2xl font-semibold mb-4 text-indigo-700">Welcome, Future PSLE Ace!</h2>
+                 <p class="text-slate-600 mb-4">Enter your name to start your Electricity revision.</p>
+                 <input type="text" id="userNameInput" placeholder="Your Name" class="w-full p-2 border border-slate-300 rounded mb-4 focus:ring-indigo-500 focus:border-indigo-500 text-center text-lg">
+                 <button onclick="saveUserName()" class="action-button bg-indigo-500 hover:bg-indigo-600 text-white w-full py-3 px-6 text-lg">Start Learning!</button>
+             </div>
+         </div>
+
+        <!-- Set Selection Screen -->
+        <div id="setSelectionScreen" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-lg text-center">
+            <h1 class="text-2xl md:text-3xl font-bold text-indigo-700 mb-2">PSLE Electricity Revision</h1>
+            <p class="text-slate-600 mb-8">Choose a set to begin and ace your exams!</p>
+            <div id="setButtonsContainer" class="grid grid-cols-1 gap-4">
+                <!-- Buttons for flashcard sets will be dynamically added here by JS -->
+            </div>
+        </div>
+
+        <!-- Flashcard Screen -->
+        <div id="flashcardScreen" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-lg">
+            <div class="mb-6">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm font-medium text-slate-600">Progress</span>
+                    <span id="progressText" class="text-sm font-medium text-indigo-700">0 / 0</span> </div>
+                <div class="w-full bg-slate-200 rounded-full h-2.5">
+                    <div id="progressBarFill" class="bg-indigo-600 h-2.5 rounded-full" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div id="flashcard" class="bg-white border border-slate-300 rounded-lg p-6 mb-6 text-center min-h-[200px] flex flex-col items-center justify-center transition-colors duration-300">
+                 <div id="flashcardContent" class="w-full flex flex-col items-center justify-center">
+                     <div id="feedbackIconContainer" class="hidden text-7xl md:text-8xl mb-2"></div>
+                     <img id="questionImage" src="" alt="Question image" class="hidden mx-auto mb-4 max-h-40 h-auto w-auto object-contain rounded">
+                     <p id="questionText" class="text-lg md:text-xl font-semibold text-slate-800"></p>
+                     <p id="feedbackText" class="mt-2 text-base md:text-lg font-semibold"></p>
+                     <p id="continueText" class="mt-4 text-sm text-slate-500 hidden">Tap card to continue...</p>
+                 </div>
+            </div>
+
+            <div id="answerChoices" class="grid grid-cols-1 gap-3 md:gap-4">
+                <button id="choice1" class="choice-button bg-slate-100 hover:bg-slate-200 text-slate-700 text-base md:text-lg"></button>
+                <button id="choice2" class="choice-button bg-slate-100 hover:bg-slate-200 text-slate-700 text-base md:text-lg"></button>
+                <button id="choice3" class="choice-button bg-slate-100 hover:bg-slate-200 text-slate-700 text-base md:text-lg"></button>
+            </div>
+             <button onclick="showSetSelection()" class="action-button mt-6 bg-slate-500 hover:bg-slate-600 text-white w-full text-sm py-3 px-6">Back to Set Selection</button>
+        </div>
+
+        <!-- Results Screen -->
+        <div id="resultsScreen" class="hidden bg-white p-6 md:p-8 rounded-xl shadow-lg text-center">
+            <h2 id="resultsHeading" class="text-2xl md:text-3xl font-bold text-indigo-700 mb-4"></h2>
+
+            <div class="bg-emerald-500 text-white p-4 rounded-lg mb-6">
+                <p class="text-lg md:text-xl font-semibold mb-1">Your Score:</p>
+                <p id="scoreDisplay" class="text-4xl md:text-5xl font-bold italic"></p>
+            </div>
+
+            <div class="race-track-container">
+                <div class="race-track"></div>
+                <div id="raceTrackFill" class="race-track-fill"></div>
+                <span id="rocketEl" class="rocket">🚀</span>
+                <span id="checkeredFlag" class="checkered-flag">🏁</span>
+            </div>
+            <p class="text-lg text-slate-700 mb-2">Percentage: <span id="percentage" class="font-semibold"></span>%</p>
+            <p class="text-lg text-slate-700 mb-6">Time: <span id="timeTaken" class="font-semibold"></span> seconds</p>
+
+            <p id="encouragementText" class="text-lg text-indigo-700 font-semibold mb-6"></p>
+            <div id="incorrectListContainer" class="mb-6 text-left">
+                <h3 class="text-xl font-semibold text-red-600 mb-3">Review Incorrect Answers:</h3>
+                <ul id="incorrectList" class="list-disc list-inside space-y-1 text-slate-600"></ul>
+                 <p id="noIncorrectText" class="text-emerald-600 font-semibold hidden">Great job, no incorrect answers!</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button id="redoIncorrectButton" onclick="redoIncorrect()" class="action-button bg-orange-500 hover:bg-orange-600 text-white w-full py-3 px-6">Redo Incorrect</button>
+                <button onclick="showSetSelection()" class="action-button bg-indigo-500 hover:bg-indigo-600 text-white w-full py-3 px-6">Choose Another Set</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="confettiCanvas"></canvas>
+
+   <script>
+    // --- Configuration ---
+    const QUESTIONS_PER_SET = 20; // Number of questions to use from each set
+    const AUTO_PROCEED_DELAY = 1200; // Time in ms before automatically proceeding after correct answer
+    const USER_NAME_STORAGE_KEY = 'psleElectricityFlashcardAppUserName_v2'; // Updated key for fresh start
+    // Ensure this URL is correct for your Google Apps Script
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx6NT33MFycqk4WKipictaOel8xdhyCDGKchgBmrgWfR6_e-7_QmjPe5psaZcVlm28OPQ/exec';
+
+    // --- PSLE Electricity Flashcard Sets ---
+    const allFlashcardSets = {
+        "Set 1: Electricity Basics (Revision)": [
+            { id: 's1q1', question: "Which of these is a common source of electricity for portable devices like a remote control?", options: ["Mains socket", "Battery", "Power station"], correctAnswer: "Battery", image: null },
+            { id: 's1q2', question: "What is the main function of a switch in an electric circuit?", options: ["To produce electricity", "To open or close the circuit path", "To make the bulb brighter"], correctAnswer: "To open or close the circuit path", image: null },
+            { id: 's1q3', question: "Which material is a good conductor of electricity, allowing current to flow easily?", options: ["Rubber band", "Copper wire", "Wooden stick"], correctAnswer: "Copper wire", image: null },
+            { id: 's1q4', question: "If a circuit is 'open', what does it mean for a bulb connected in it?", options: ["The bulb will light up brightly", "The bulb will not light up", "The bulb will be very dim"], correctAnswer: "The bulb will not light up", image: null },
+            { id: 's1q5', question: "Which of these is NOT typically an effect of electricity passing through a component?", options: ["Producing light (e.g., bulb)", "Producing heat (e.g., heater)", "Creating magnetism (e.g., electromagnet)", "Changing colour (e.g. chameleon)"], correctAnswer: "Changing colour (e.g. chameleon)", image: null },
+            { id: 's1q6', question: "What part of a dry cell (battery) is usually marked with a '+' sign?", options: ["The negative terminal", "The positive terminal", "The flat bottom part"], correctAnswer: "The positive terminal", image: null },
+            { id: 's1q7', question: "Electrical wires are often coated with plastic. What is the main reason for this coating?", options: ["To make them look colourful", "To act as an insulator and prevent electric shock", "To make them conduct electricity better"], correctAnswer: "To act as an insulator and prevent electric shock", image: null },
+            { id: 's1q8', question: "For a bulb to light up in a simple circuit, the circuit must be:", options: ["Open and made of insulators", "Closed and made of conductors", "Open and made of conductors only"], correctAnswer: "Closed and made of conductors", image: null },
+            { id: 's1q9', question: "Which of these home appliances typically uses mains electricity (plugged into a wall socket)?", options: ["A battery-operated torchlight", "A large screen television", "A small toy car with batteries"], correctAnswer: "A large screen television", image: null },
+            { id: 's1q10', question: "What dangerous condition occurs if the two terminals of a battery are connected directly by only a wire without any load (like a bulb)?", options: ["The battery charges up automatically", "A short circuit, causing the wire to get very hot", "The battery's lifespan is extended"], correctAnswer: "A short circuit, causing the wire to get very hot", image: null },
+            { id: 's1q11', question: "Which of these materials is an electrical insulator, meaning it does not allow electricity to flow easily?", options: ["Silver coin", "Glass cup", "Iron nail"], correctAnswer: "Glass cup", image: null },
+            { id: 's1q12', question: "What is the complete path along which electricity can flow called?", options: ["An electrical current", "An electrical insulator", "An electrical circuit"], correctAnswer: "An electrical circuit", image: null },
+            { id: 's1q13', question: "In a simple circuit powered by a battery, which component provides the initial energy?", options: ["The light bulb", "The connecting wire", "The battery"], correctAnswer: "The battery", image: null },
+            { id: 's1q14', question: "When a bulb lights up, electrical energy from the battery is mainly converted into which two forms of energy?", options: ["Light and sound energy", "Light and heat energy", "Heat and chemical energy"], correctAnswer: "Light and heat energy", image: null },
+            { id: 's1q15', question: "Why is it dangerous to touch electrical switches or appliances with wet hands?", options: ["Water cleans the appliance effectively", "Water is a good conductor of electricity and increases shock risk", "Water cools down hot appliances quickly"], correctAnswer: "Water is a good conductor of electricity and increases shock risk", image: null },
+            { id: 's1q16', question: "What does a closed switch do in an electrical circuit?", options: ["It creates a break in the circuit path", "It completes the circuit path, allowing current to flow", "It reduces the amount of electricity flowing"], correctAnswer: "It completes the circuit path, allowing current to flow", image: null },
+            { id: 's1q17', question: "If you correctly add more identical batteries in series in a simple circuit with one bulb, what usually happens to the bulb's brightness?", options: ["It becomes dimmer", "It becomes brighter", "Its brightness remains exactly the same"], correctAnswer: "It becomes brighter", image: null },
+            { id: 's1q18', question: "Which safety device in a circuit is designed to melt and break the circuit if too much current flows through it?", options: ["A switch", "A light bulb", "A fuse"], correctAnswer: "A fuse", image: null },
+            { id: 's1q19', question: "Electrical energy can be transformed into various other forms. Which of these best lists common transformations?", options: ["Only light energy", "Only heat energy", "Light, heat, sound, and kinetic (movement) energy"], correctAnswer: "Light, heat, sound, and kinetic (movement) energy", image: null },
+            { id: 's1q20', question: "The continuous flow of electric charge through a conductor is known as:", options: ["Electrical potential", "Electrical resistance", "Electrical current"], correctAnswer: "Electrical current", image: null }
+        ],
+        "Set 2: Deeper Understanding (Circuits)": [
+            { id: 's2q1', question: "In a series circuit with two identical bulbs, if one bulb filament breaks (fuses), what happens to the other bulb?", options: ["It becomes brighter", "It also goes out", "It remains lit with the same brightness"], correctAnswer: "It also goes out", image: null },
+            { id: 's2q2', question: "In a parallel circuit with two identical bulbs, if one bulb filament breaks (fuses), what happens to the other bulb?", options: ["It becomes much brighter", "It also goes out", "It remains lit, largely unaffected"], correctAnswer: "It remains lit, largely unaffected", image: null },
+            { id: 's2q3', question: "Two identical bulbs are lit. In which arrangement will the bulbs generally be brighter, assuming the same battery source?", options: ["Connected in series", "Connected in parallel", "Brightness is the same in both series and parallel"], correctAnswer: "Connected in parallel", image: null },
+            { id: 's2q4', question: "What does the electrical symbol of a circle with a letter 'A' inside represent in a circuit diagram?", options: ["A voltmeter (measures voltage)", "An ammeter (measures current)", "A battery (provides energy)"], correctAnswer: "An ammeter (measures current)", image: null },
+            { id: 's2q5', question: "What physical quantity does an ammeter measure in an electrical circuit?", options: ["Electrical pressure or voltage (Volts)", "Rate of flow of electric charge or current (Amperes)", "Opposition to current flow or resistance (Ohms)"], correctAnswer: "Rate of flow of electric charge or current (Amperes)", image: null },
+            { id: 's2q6', question: "To correctly measure the current flowing through a specific bulb in a circuit, how should an ammeter be connected?", options: ["In parallel across the bulb's terminals", "In series with the bulb", "Across the battery terminals directly"], correctAnswer: "In series with the bulb", image: null },
+            { id: 's2q7', question: "What does the electrical symbol of a circle with a letter 'V' inside represent in a circuit diagram?", options: ["A voltmeter (measures voltage)", "An ammeter (measures current)", "A variable resistor"], correctAnswer: "A voltmeter (measures voltage)", image: null },
+            { id: 's2q8', question: "What physical quantity does a voltmeter measure in an electrical circuit?", options: ["The flow of electrons (current)", "The electrical potential difference or 'push' (voltage)", "The material's property to resist current (resistance)"], correctAnswer: "The electrical potential difference or 'push' (voltage)", image: null },
+            { id: 's2q9', question: "To correctly measure the voltage across a specific bulb in a circuit, how should a voltmeter be connected?", options: ["In series with the bulb and battery", "In parallel across the bulb's terminals", "In series with only the battery"], correctAnswer: "In parallel across the bulb's terminals", image: null },
+            { id: 's2q10', question: "If you increase the number of identical bulbs connected in a series circuit (powered by one battery), what happens to the total resistance of the circuit?", options: ["It decreases significantly", "It increases", "It remains exactly the same"], correctAnswer: "It increases", image: null },
+            { id: 's2q11', question: "If you add more identical bulbs in separate parallel branches to a circuit (powered by one battery), what happens to the total current drawn from the battery?", options: ["It decreases", "It increases", "It remains exactly the same"], correctAnswer: "It increases", image: null },
+            { id: 's2q12', question: "A fuse, a safety device, is always connected in a specific way in the main circuit. How is it connected?", options: ["In series with the live wire", "In parallel with the live wire", "In series with the neutral wire only"], correctAnswer: "In series with the live wire", image: null },
+            { id: 's2q13', question: "What is a key advantage of using parallel circuits for lighting in a house, compared to series circuits?", options: ["It uses significantly less wiring material", "If one bulb blows, the other bulbs continue to work", "All bulbs are dimmer, thus saving more energy"], correctAnswer: "If one bulb blows, the other bulbs continue to work", image: null },
+            { id: 's2q14', question: "Which statement about a series circuit is generally TRUE?", options: ["The current divides at each component", "The voltage is the same across all components in the circuit", "If there is a break anywhere in the circuit, current stops flowing in the entire circuit"], correctAnswer: "If there is a break anywhere in the circuit, current stops flowing in the entire circuit", image: null },
+            { id: 's2q15', question: "Electrical power (measured in Watts) is defined as the rate at which:", options: ["Electrical charge accumulates on a surface", "Electrical energy is transferred or converted", "Electrical resistance opposes the flow of current"], correctAnswer: "Electrical energy is transferred or converted", image: null },
+            { id: 's2q16', question: "Two identical bulbs are connected in series to a battery. If a third identical bulb is added in series, how will the brightness of the original two bulbs change?", options: ["They become significantly brighter", "They become dimmer", "Their brightness remains unchanged"], correctAnswer: "They become dimmer", image: null },
+            { id: 's2q17', question: "Two identical bulbs are connected in parallel to a battery. If a third identical bulb is added in parallel, how will the brightness of the original two bulbs generally change (assuming an ideal battery)?", options: ["They become significantly brighter", "They become significantly dimmer", "Their brightness remains largely unchanged"], correctAnswer: "Their brightness remains largely unchanged", image: null },
+            { id: 's2q18', question: "What is the primary purpose of an earth wire (ground wire) in some electrical appliances like washing machines?", options: ["To provide an extra path for more power", "A safety feature to prevent electric shock if a fault causes the casing to become live", "To complete the circuit for normal operation of the appliance"], correctAnswer: "A safety feature to prevent electric shock if a fault causes the casing to become live", image:null },
+            { id: 's2q19', question: "What form of energy is primarily stored within a new, unused battery?", options: ["Electrical energy", "Chemical energy", "Kinetic (movement) energy"], correctAnswer: "Chemical energy", image: null },
+            { id: 's2q20', question: "When electricity flows through a heating element (like in a toaster or kettle), electrical energy is primarily converted into what form of energy?", options: ["Light energy", "Sound energy", "Heat energy"], correctAnswer: "Heat energy", image: null }
+        ],
+        "Set 3: Critical Thinking (Application)": [
+            { id: 's3q1', question: "In a circuit with one battery and three bulbs connected in series, when the switch is closed, which bulb will light up first?", options: ["The bulb nearest to the battery's positive terminal", "The bulb nearest to the battery's negative terminal", "All three bulbs will light up almost simultaneously"], correctAnswer: "All three bulbs will light up almost simultaneously", image: null },
+            { id: 's3q2', question: "Ali has a circuit with a battery, a switch, and two bulbs (Bulb A and Bulb B) connected in parallel. If Bulb A's filament breaks, what will Ali observe about Bulb B?", options: ["Bulb B will also go out", "Bulb B will remain lit with approximately the same brightness", "Bulb B will become noticeably brighter"], correctAnswer: "Bulb B will remain lit with approximately the same brightness", image: null },
+            { id: 's3q3', question: "Siti wants to design a circuit for a model lighthouse with two lights. She wants to be able to switch each light on and off independently of the other. How should she connect the lights and switches?", options: ["Both lights in series with a single switch", "Both lights in parallel, with each light having its own switch in its branch", "Both lights in series, with each light having its own switch in series with it"], correctAnswer: "Both lights in parallel, with each light having its own switch in its branch", image: null },
+            { id: 's3q4', question: "A student has a simple circuit with one battery and one bulb. The bulb is lit but appears dim. Which of these changes is most likely to make the bulb brighter (without changing the bulb itself)?", options: ["Adding another identical battery in series with the first one (correctly oriented)", "Adding another identical bulb in series with the first one", "Using thinner connecting wires for the circuit"], correctAnswer: "Adding another identical battery in series with the first one (correctly oriented)", image: null },
+            { id: 's3q5', question: "If a copper wire in a functioning electrical circuit suddenly becomes very hot and starts to smoke, this is most likely a sign of:", options: ["The battery running out of power", "A short circuit (e.g., insulation damaged, direct path across battery)", "The switch being in the 'open' position for too long"], correctAnswer: "A short circuit (e.g., insulation damaged, direct path across battery)", image: null },
+            { id: 's3q6', question: "Consider a circuit with Battery X and Bulb P, and current flows. If Battery X is replaced by Battery Y (identical voltage) and Bulb P is replaced by Bulb Q (which has higher resistance than P), how will the current in the circuit change?", options: ["The current will increase", "The current will decrease", "The current will remain exactly the same"], correctAnswer: "The current will decrease", image: null },
+            { id: 's3q7', question: "Three identical light bulbs are correctly connected in parallel to a single battery and all are lit. If one of the connecting wires to ONE of the bulbs becomes loose and disconnects that bulb, how many bulbs will remain lit?", options: ["Zero", "One", "Two"], correctAnswer: "Two", image: null },
+            { id: 's3q8', question: "In an experiment, a student observes that Bulb X is significantly brighter than Bulb Y, even though both are in the same complex circuit powered by one battery. What is the most likely reason for this difference?", options: ["More electrical current is flowing through Bulb X than Bulb Y", "Less electrical current is flowing through Bulb X than Bulb Y", "Bulb Y has a much lower resistance than Bulb X"], correctAnswer: "More electrical current is flowing through Bulb X than Bulb Y", image: null },
+            { id: 's3q9', question: "Why is it dangerous to plug too many high-power appliances (like a kettle, microwave, and heater) into a single electrical socket using a multi-plug adapter?", options: ["It reduces the voltage available for each appliance, making them inefficient", "It can cause the total current drawn to exceed the socket's limit, leading to overheating and fire risk", "It makes the appliances run faster and wear out quicker"], correctAnswer: "It can cause the total current drawn to exceed the socket's limit, leading to overheating and fire risk", image: null },
+            { id: 's3q10', question: "A circuit diagram shows a light bulb that will only light up if Switch S1 AND Switch S2 are both closed. How are switches S1 and S2 connected in relation to each other and the bulb?", options: ["S1 and S2 are in parallel with each other", "S1 and S2 are in series with each other and the bulb", "One switch is in series, the other is in parallel with the bulb"], correctAnswer: "S1 and S2 are in series with each other and the bulb", image: null },
+            { id: 's3q11', question: "A circuit has a bulb that lights up if Switch S1 is closed OR Switch S2 is closed (or if both are closed). How are S1 and S2 likely connected relative to the bulb?", options: ["S1 and S2 are in series with each other", "S1 and S2 are in parallel with each other, and this combination is in series with the bulb", "S1 is in series with the bulb, and S2 is in parallel with S1"], correctAnswer: "S1 and S2 are in parallel with each other, and this combination is in series with the bulb", image: null },
+            { id: 's3q12', question: "To measure the total current being supplied by a battery that is powering two bulbs connected in parallel, where should an ammeter be placed?", options: ["In series with only one of the parallel bulbs", "In parallel across one of the bulbs", "In the main part of the circuit, in series with the battery, before the circuit branches to the bulbs"], correctAnswer: "In the main part of the circuit, in series with the battery, before the circuit branches to the bulbs", image: null },
+            { id: 's3q13', question: "A student builds a circuit containing a battery, a bulb, and a variable resistor. If the student adjusts the variable resistor to increase its resistance, what will happen to the brightness of the bulb?", options: ["The bulb's brightness will increase", "The bulb's brightness will decrease", "The bulb's brightness will remain unchanged"], correctAnswer: "The bulb's brightness will decrease", image: null },
+            { id: 's3q14', question: "Which of the following actions would MOST LIKELY increase an electrical hazard in a typical home environment?", options: ["Replacing a blown 5A fuse with another new 5A fuse", "Continuing to use an electric kettle that has a frayed power cord", "Unplugging a toaster by pulling the plug, not the cord, when it's not in use"], correctAnswer: "Continuing to use an electric kettle that has a frayed power cord", image: null },
+            { id: 's3q15', question: "A battery-operated toy car has a motor for movement and small LED lights. If the LED lights become noticeably dimmer when the car's motor is made to run at high speed, what does this most likely suggest about the battery?", options: ["The battery is brand new and very powerful", "The motor is drawing a large current, causing the battery's output voltage to drop", "The LED lights are wired incorrectly in series with the motor"], correctAnswer: "The motor is drawing a large current, causing the battery's output voltage to drop", image: null },
+            { id: 's3q16', question: "You have two identical 1.5V batteries and two identical small bulbs. How would you connect these components to make the bulbs light up as brightly as possible without quickly damaging them (assume bulbs can handle 3V)?", options: ["Connect both batteries in series, and then connect both bulbs in series to this battery combination", "Connect both batteries in parallel, and then connect both bulbs in parallel to this battery combination", "Connect both batteries in series, and then connect both bulbs in parallel to this 3V battery combination"], correctAnswer: "Connect both batteries in series, and then connect both bulbs in parallel to this 3V battery combination", image: null },
+            { id: 's3q17', question: "Three wires of the same length and thickness are made of copper, iron, and nichrome respectively. If each is used in turn to complete a simple circuit with a battery and a bulb, which wire material would likely result in the Dimmest bulb?", options: ["Copper wire (very low resistance)", "Iron wire (low resistance)", "Nichrome wire (higher resistance)"], correctAnswer: "Nichrome wire (higher resistance)", image: null },
+            { id: 's3q18', question: "A student observes that when a very powerful electric heater is switched on in a room, the incandescent lights in the same room dim slightly for a moment. What is a plausible explanation for this?", options: ["The heater consumes a large amount of current, causing a temporary drop in the voltage supplied to the lights", "The heater generates intense light that optically cancels out some of the light from the bulbs", "The electrical frequency in the house wiring changes, affecting the lights"], correctAnswer: "The heater consumes a large amount of current, causing a temporary drop in the voltage supplied to the lights", image: null },
+            { id: 's3q19', question: "In a model house, the lights in Room A and Room B can be switched on/off independently. However, there is a main switch near the entrance that can turn off ALL power to both rooms. This implies that:", options: ["Room A's circuit and Room B's circuit are in series with each other after the main switch", "The main switch is in series with the parallel combination of Room A's circuit and Room B's circuit", "The main switch is in parallel with all the room lights"], correctAnswer: "The main switch is in series with the parallel combination of Room A's circuit and Room B's circuit", image: null },
+            { id: 's3q20', question: "An electric kettle is rated at 2000 Watts (W). An energy-saving light bulb is rated at 10 Watts (W). If both are switched on and used for exactly one hour, which statement is correct regarding their energy consumption?", options: ["The light bulb will use more electrical energy than the kettle.", "The kettle will use significantly more electrical energy than the light bulb.", "Both will use exactly the same amount of electrical energy because they were used for the same duration."], correctAnswer: "The kettle will use significantly more electrical energy than the light bulb.", image: null }
+        ]
+    };
+
+    // --- State Variables ---
+    let currentSetData = [];      // Holds the questions for the current session (subset of a full set)
+    let currentQuestionIndex = 0;
+    let score = 0;
+    let incorrectAnswers = [];    // Stores questions answered incorrectly for review
+    let startTime;
+    let endTime;
+    let isRedoing = false;        // Flag for when user is redoing incorrect answers
+    let proceedTimeoutId = null;  // Timeout ID for auto-proceeding
+    let isWaitingToProceed = false; // Flag to prevent multiple clicks/actions while waiting
+    let userName = localStorage.getItem(USER_NAME_STORAGE_KEY) || '';
+
+    // --- Sound Synthesis (Tone.js) ---
+    const correctSound = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.005, decay: 0.1, sustain: 0.05, release: 0.2 }, }).toDestination();
+    const incorrectSound = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.2 } }).toDestination();
+
+    // --- Confetti ---
+    const confettiCanvas = document.getElementById('confettiCanvas');
+    const myConfetti = confetti.create(confettiCanvas, { resize: true, useWorker: true });
+
+    // --- DOM Elements (Cached for performance) ---
+    const nameModal = document.getElementById('nameModal');
+    const userNameInput = document.getElementById('userNameInput');
+    const setSelectionScreen = document.getElementById('setSelectionScreen');
+    const setButtonsContainer = document.getElementById('setButtonsContainer');
+    const flashcardScreen = document.getElementById('flashcardScreen');
+    const resultsScreen = document.getElementById('resultsScreen');
+    const progressText = document.getElementById('progressText');
+    const progressBarFill = document.getElementById('progressBarFill');
+    const flashcard = document.getElementById('flashcard');
+    const questionImageEl = document.getElementById('questionImage');
+    const questionText = document.getElementById('questionText');
+    const feedbackText = document.getElementById('feedbackText');
+    const feedbackIconContainer = document.getElementById('feedbackIconContainer');
+    const continueText = document.getElementById('continueText');
+    const choiceButtons = [ document.getElementById('choice1'), document.getElementById('choice2'), document.getElementById('choice3') ];
+    const scoreDisplayEl = document.getElementById('scoreDisplay');
+    const percentageEl = document.getElementById('percentage');
+    const timeTakenEl = document.getElementById('timeTaken');
+    const incorrectListContainer = document.getElementById('incorrectListContainer');
+    const incorrectList = document.getElementById('incorrectList');
+    const noIncorrectText = document.getElementById('noIncorrectText');
+    const redoIncorrectButton = document.getElementById('redoIncorrectButton');
+    const encouragementTextEl = document.getElementById('encouragementText');
+    const resultsHeadingEl = document.getElementById('resultsHeading');
+    const raceTrackContainer = document.querySelector('#resultsScreen .race-track-container');
+    const raceTrackFillEl = document.getElementById('raceTrackFill');
+    const rocketEl = document.getElementById('rocketEl');
+
+    // --- Event Listeners ---
+    flashcard.addEventListener('click', () => {
+        if (isWaitingToProceed &&
+            !flashcard.classList.contains('incorrect-state') &&
+            (flashcard.classList.contains('correct-state-static') || flashcard.classList.contains('clickable-card'))) {
+            proceedToNext();
+        }
+    });
+    userNameInput.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            saveUserName();
+        }
+    });
+
+    // --- Utility Functions ---
+    function shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+    }
+
+    // --- Core Application Logic ---
+    function populateStartButton() {
+        setButtonsContainer.innerHTML = ''; // Clear existing buttons
+
+        Object.keys(allFlashcardSets).forEach(setName => {
+            const set = allFlashcardSets[setName];
+            if (set.length >= QUESTIONS_PER_SET) {
+                const button = document.createElement('button');
+                button.textContent = `Start ${setName}`;
+                button.className = `action-button w-full py-3 px-6 bg-indigo-500 hover:bg-indigo-600 text-white mb-3 last:mb-0`; // Added Tailwind classes for spacing
+                button.onclick = () => startFlashcardSession(set, setName);
+                setButtonsContainer.appendChild(button);
+            } else {
+                const errorP = document.createElement('p');
+                errorP.className = "text-red-500 text-sm";
+                errorP.textContent = `Error: The set "${setName}" does not have enough questions (${set.length} found, ${QUESTIONS_PER_SET} required).`;
+                setButtonsContainer.appendChild(errorP);
+                console.error(`The set "${setName}" does not meet the ${QUESTIONS_PER_SET} question requirement.`);
+            }
+        });
+
+        if (Object.keys(allFlashcardSets).length === 0) {
+             setButtonsContainer.innerHTML = `<p class="text-slate-600">No flashcard sets are currently available. Please check the configuration.</p>`;
+        }
+    }
+
+    function saveUserName() {
+        const name = userNameInput.value.trim();
+        userName = name ? name : 'Learner';
+        localStorage.setItem(USER_NAME_STORAGE_KEY, userName);
+        nameModal.style.display = 'none';
+        showSetSelection();
+    }
+
+    function startFlashcardSession(selectedSet, setName) {
+        Tone.start().catch(e => console.warn("Audio context could not start on user interaction:", e));
+
+        let fullSetCopy = [...selectedSet]; 
+        if (fullSetCopy.length < QUESTIONS_PER_SET) {
+            console.error(`Cannot start set "${setName}": Needs ${QUESTIONS_PER_SET} questions, has ${fullSetCopy.length}.`);
+            alert(`Error: The set "${setName}" does not have enough questions to start the session.`);
+            return;
+        }
+
+        shuffleArray(fullSetCopy);
+        currentSetData = fullSetCopy.slice(0, QUESTIONS_PER_SET); 
+        currentSetData.setName = setName; 
+
+        currentQuestionIndex = 0;
+        score = 0;
+        incorrectAnswers = [];
+        isRedoing = false;
+
+        setSelectionScreen.classList.add('hidden');
+        resultsScreen.classList.add('hidden');
+        flashcardScreen.classList.remove('hidden');
+        updateProgress(); 
+        startTime = new Date();
+        displayQuestion();
+    }
+
+    function resetCardState() {
+        if (proceedTimeoutId) { clearTimeout(proceedTimeoutId); proceedTimeoutId = null; }
+        isWaitingToProceed = false;
+
+        flashcard.classList.remove('shake', 'correct-state-static', 'incorrect-state', 'clickable-card');
+        flashcard.style.backgroundColor = ''; flashcard.style.color = '';
+        questionText.style.color = '';
+        questionText.classList.remove('hidden');
+        feedbackText.textContent = '';
+        feedbackText.className = 'mt-2 text-base md:text-lg font-semibold';
+        feedbackText.style.color = '';
+        feedbackIconContainer.classList.add('hidden');
+        feedbackIconContainer.innerHTML = '';
+        flashcard.style.cursor = 'default';
+        continueText.classList.add('hidden');
+        questionImageEl.classList.add('hidden'); questionImageEl.src = '';
+
+        choiceButtons.forEach(btn => {
+            btn.className = 'choice-button bg-slate-100 hover:bg-slate-200 text-slate-700 text-base md:text-lg';
+        });
+    }
+
+    function displayQuestion() {
+        resetCardState();
+        if (currentQuestionIndex >= currentSetData.length) {
+            showResults();
+            return;
+        }
+        const questionData = currentSetData[currentQuestionIndex];
+        questionText.textContent = questionData.question;
+        if (questionData.image) {
+            questionImageEl.src = questionData.image;
+            questionImageEl.classList.remove('hidden');
+        }
+        let displayOptions = [...questionData.options];
+        shuffleArray(displayOptions);
+        choiceButtons.forEach((button, index) => {
+            if (displayOptions[index] !== undefined) {
+                button.textContent = displayOptions[index];
+                button.disabled = false;
+                button.dataset.answer = displayOptions[index];
+                button.onclick = () => checkAnswer(button);
+                button.style.display = '';
+            } else {
+                button.style.display = 'none'; 
+            }
+        });
+    }
+
+    function updateProgress() {
+        const totalQuestions = currentSetData.length;
+        const completed = currentQuestionIndex;
+        const progressPercentage = totalQuestions > 0 ? (completed / totalQuestions) * 100 : 0;
+        progressText.textContent = `${completed} / ${totalQuestions}`;
+        progressBarFill.style.width = `${progressPercentage}%`;
+    }
+
+    function checkAnswer(button) {
+        Tone.start().catch(e => console.warn("Audio context failed to start on answer check:", e));
+        if (isWaitingToProceed && !flashcard.classList.contains('incorrect-state')) return;
+
+        const selectedAnswer = button.dataset.answer;
+        const questionData = currentSetData[currentQuestionIndex];
+        const correctAnswer = questionData.correctAnswer;
+        choiceButtons.forEach(btn => btn.disabled = true);
+
+        if (selectedAnswer === correctAnswer) {
+            if (!isRedoing) score++;
+            flashcard.classList.add('correct-state-static');
+            feedbackIconContainer.innerHTML = '<span class="text-7xl md:text-8xl">✓</span>';
+            feedbackIconContainer.classList.remove('hidden');
+            questionText.classList.add('hidden');
+            if (questionImageEl.src) questionImageEl.classList.add('hidden'); // Hide image if present
+            feedbackText.textContent = 'Correct!';
+            myConfetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+            correctSound.triggerAttackRelease("G5", "8n", Tone.now());
+            button.className = 'choice-button bg-emerald-600 text-white ring-2 ring-emerald-800 text-base md:text-lg shadow-md';
+            isWaitingToProceed = true;
+            flashcard.classList.add('clickable-card');
+            flashcard.style.cursor = 'pointer';
+            continueText.classList.remove('hidden');
+            if (proceedTimeoutId) clearTimeout(proceedTimeoutId);
+            proceedTimeoutId = setTimeout(proceedToNext, AUTO_PROCEED_DELAY);
+            currentQuestionIndex++; 
+            updateProgress(); 
+        } else {
+            flashcard.classList.add('shake', 'incorrect-state');
+            feedbackIconContainer.innerHTML = '<span class="text-7xl md:text-8xl">✗</span>';
+            feedbackIconContainer.classList.remove('hidden');
+            if (questionImageEl.src) questionImageEl.classList.add('hidden'); // Hide image if present
+            questionText.classList.add('hidden'); // Hide question text to show feedback clearly
+            feedbackText.innerHTML = `Correct Answer: <span class="font-bold">${correctAnswer}</span><br><span class="prompt-guidance">Click the correct answer (green) to continue.</span>`;
+            incorrectSound.triggerAttackRelease("C3", "8n");
+            if (!isRedoing) {
+                incorrectAnswers.push({
+                    questionData: JSON.parse(JSON.stringify(questionData)), 
+                    userAnswer: selectedAnswer
+                });
+            }
+            continueText.classList.add('hidden');
+            isWaitingToProceed = false;
+            flashcard.classList.remove('clickable-card');
+            flashcard.style.cursor = 'default';
+            if (proceedTimeoutId) { clearTimeout(proceedTimeoutId); proceedTimeoutId = null; }
+            choiceButtons.forEach(btn => {
+                if (btn.dataset.answer === correctAnswer) {
+                    btn.className = 'choice-button bg-emerald-500 hover:bg-emerald-600 text-white text-base md:text-lg';
+                    btn.disabled = false;
+                    btn.onclick = function() {
+                        currentQuestionIndex++; 
+                        updateProgress(); 
+                        proceedToNext();
+                    };
+                } else if (btn === button) {
+                    btn.className = 'choice-button bg-red-700 text-white ring-2 ring-red-900 text-base md:text-lg shadow-md';
+                } else {
+                    btn.className = 'choice-button bg-slate-200 text-slate-500 text-base md:text-lg forced-disabled-look';
+                }
+            });
+        }
+    }
+
+    function proceedToNext() {
+        if (proceedTimeoutId) { clearTimeout(proceedTimeoutId); proceedTimeoutId = null; }
+        isWaitingToProceed = false;
+        displayQuestion();
+    }
+
+    function showResults() {
+        endTime = new Date();
+        const timeDiff = Math.round((endTime - startTime) / 1000);
+        const totalQuestions = currentSetData.length;
+        const currentScore = isRedoing ? (totalQuestions - incorrectAnswers.length) : score;
+        const percentage = totalQuestions > 0 ? Math.round((currentScore / totalQuestions) * 100) : 0;
+
+        resultsHeadingEl.textContent = isRedoing ? 'Review Complete!' : `${currentSetData.setName || 'Session'} Complete!`;
+        scoreDisplayEl.textContent = `${currentScore} / ${totalQuestions}`;
+        percentageEl.textContent = `${percentage}`;
+        timeTakenEl.textContent = `${timeDiff}s`;
+
+        if (percentage === 100) encouragementTextEl.textContent = isRedoing ? "Perfect review! All clear." : "Outstanding! You're a star learner!";
+        else if (percentage >= 70) encouragementTextEl.textContent = isRedoing ? "Good review! Keep it up." : "Great effort! Keep up the learning!";
+        else encouragementTextEl.textContent = isRedoing ? "Keep reviewing to master these!" : "Well done! Practice makes perfect!";
+        encouragementTextEl.className = `text-lg font-semibold mb-6 ${percentage === 100 ? 'text-emerald-700' : percentage >= 70 ? 'text-indigo-700' : 'text-orange-700'}`;
+
+        flashcardScreen.classList.add('hidden');
+        resultsScreen.classList.remove('hidden');
+
+        // Rocket animation
+        const trackWidth = raceTrackContainer.offsetWidth;
+        const effectiveTrackWidth = trackWidth - rocketEl.offsetWidth; // Adjust for rocket size
+        
+        rocketEl.style.left = '0px'; 
+        raceTrackFillEl.style.width = '0px';
+
+        // Ensure animation happens after elements are visible and layout is calculated
+        requestAnimationFrame(() => {
+            setTimeout(() => { // Small delay to ensure transition applies
+                const finalRocketPosition = Math.max(0, (percentage / 100) * effectiveTrackWidth);
+                rocketEl.style.left = `${finalRocketPosition}px`;
+                raceTrackFillEl.style.width = `${finalRocketPosition}px`;
+            }, 100);
+        });
+
+
+        incorrectList.innerHTML = '';
+        const incorrectAnswersForDisplay = incorrectAnswers; 
+        if (incorrectAnswersForDisplay.length > 0) {
+            incorrectListContainer.classList.remove('hidden'); noIncorrectText.classList.add('hidden');
+            incorrectAnswersForDisplay.forEach(item => {
+                const li = document.createElement('li');
+                li.innerHTML = `<b>Q:</b> ${item.questionData.question}<br/><b>Your:</b> <span class="text-red-500">${item.userAnswer}</span><br/><b>Correct:</b> <span class="text-emerald-600">${item.questionData.correctAnswer}</span>`;
+                incorrectList.appendChild(li);
+            });
+            redoIncorrectButton.classList.remove('hidden');
+            redoIncorrectButton.classList.toggle('hidden', isRedoing || incorrectAnswersForDisplay.length === 0);
+
+        } else {
+            incorrectListContainer.classList.add('hidden'); noIncorrectText.classList.remove('hidden');
+            redoIncorrectButton.classList.add('hidden');
+        }
+         redoIncorrectButton.disabled = incorrectAnswersForDisplay.length === 0;
+
+
+        sendResultsToGoogleSheet({
+            setName: currentSetData.setName || "Unknown Set",
+            score: currentScore,
+            totalQuestions: totalQuestions,
+            percentage: percentage,
+            timeTaken: timeDiff,
+            incorrectAnswersJSON: JSON.stringify(incorrectAnswersForDisplay.map(item => ({ 
+                question: item.questionData.question,
+                userAnswer: item.userAnswer,
+                correctAnswer: item.questionData.correctAnswer
+            }))),
+            os: navigator.platform || 'N/A',
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'N/A',
+            name: userName,
+            timestamp: new Date().toISOString() 
+        });
+
+        if (isRedoing) {
+            incorrectAnswers = []; 
+            isRedoing = false;
+        }
+    }
+
+    function sendResultsToGoogleSheet(data) {
+        fetch(APPS_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({payloadType: 'flashcardResults', ...data }) 
+        })
+        .then(() => { 
+            console.log("Google Apps Script request sent. Check server-side logs for confirmation.");
+        })
+        .catch(err => {
+            console.error("Failed to send results to Google Apps Script:", err);
+        });
+    }
+
+    function redoIncorrect() {
+        if (incorrectAnswers.length === 0) {
+            alert("No incorrect answers from the last session to redo!");
+            return;
+        }
+        // Create a new array of question data from the incorrect answers
+        const questionsToRedo = incorrectAnswers.map(item => item.questionData);
+        
+        // Store the original set name to append "(Redo)"
+        const originalSetName = currentSetData.setName.replace(" (Redo)", ""); // Remove existing (Redo) if present
+        
+        currentSetData = questionsToRedo;
+        currentSetData.setName = `${originalSetName} (Redo)`;
+
+
+        currentQuestionIndex = 0;
+        // Score is effectively reset as it's calculated based on new performance in redo
+        // `incorrectAnswers` will be populated with any mistakes made *during this redo session*.
+        incorrectAnswers = []; // Reset to track mistakes in *this* redo attempt.
+
+        isRedoing = true;
+        resultsScreen.classList.add('hidden');
+        flashcardScreen.classList.remove('hidden');
+        startTime = new Date();
+        updateProgress(); 
+        displayQuestion();
+    }
+
+    function showSetSelection() {
+        if (proceedTimeoutId) { clearTimeout(proceedTimeoutId); proceedTimeoutId = null; }
+        isWaitingToProceed = false;
+        isRedoing = false; 
+
+        nameModal.style.display = 'none';
+        flashcardScreen.classList.add('hidden');
+        resultsScreen.classList.add('hidden');
+        setSelectionScreen.classList.remove('hidden');
+
+        progressText.textContent = `0 / ${QUESTIONS_PER_SET}`; 
+        progressBarFill.style.width = '0%';
+        populateStartButton();
+    }
+
+    // --- Initialization ---
+    document.addEventListener('DOMContentLoaded', () => {
+        userName = localStorage.getItem(USER_NAME_STORAGE_KEY) || '';
+        if (userName) {
+            showSetSelection(); 
+        } else {
+            nameModal.style.display = 'flex';
+            userNameInput.focus();
+        }
+    });
+</script>
+
+</body>
+</html>
