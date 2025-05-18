@@ -561,21 +561,22 @@
 
 
         sendResultsToGoogleSheet({
-            setName: currentSetData.setName || "Unknown Set",
-            score: currentScore,
-            totalQuestions: totalQuestions,
-            percentage: percentage,
-            timeTaken: timeDiff,
-            incorrectAnswersJSON: JSON.stringify(incorrectAnswersForDisplay.map(item => ({ 
-                question: item.questionData.question,
-                userAnswer: item.userAnswer,
-                correctAnswer: item.questionData.correctAnswer
-            }))),
-            os: navigator.platform || 'N/A',
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'N/A',
-            name: userName,
-            timestamp: new Date().toISOString() 
-        });
+    setName: currentSetData.setName || "Unknown Set",
+    score: currentScore,
+    totalQuestions: totalQuestions,
+    percentage: percentage,
+    timeTaken: timeDiff,
+    incorrectQuestionsJSON: JSON.stringify(incorrectAnswersForDisplay.map(item => ({
+        question: item.questionData.question,
+        userAnswer: item.userAnswer,
+        correctAnswer: item.questionData.correctAnswer
+    }))),
+    os: navigator.platform || 'N/A',
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'N/A',
+    name: userName,
+    timestamp: new Date().toISOString()
+});
+
 
         if (isRedoing) {
             incorrectAnswers = []; 
